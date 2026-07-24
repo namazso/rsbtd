@@ -239,31 +239,5 @@ exit 0
 %{_datadir}/rsbtd/webui/
 
 %changelog
-* Thu Jul 23 2026 rsbtd maintainers <noreply@github.com> - 1.0.0-4
-- Ship LICENSE and THIRD-PARTY-NOTICES.md in the debuginfo/debugsource
-  packages too, merging the per-binary debuginfo packages into one
-  (rpm's per-subpackage filter would strip the license files).
-
-* Sun Jul 19 2026 rsbtd maintainers <noreply@github.com> - 1.0.0-3
-- Ship LICENSE and THIRD-PARTY-NOTICES.md (scripts/gen_notices.py) as
-  %%license in every package.
-
-* Sun Jul 19 2026 rsbtd maintainers <noreply@github.com> - 1.0.0-2
-- Keep LTO out of %%check: %%_lto_cflags is now nil and %%build opts in
-  explicitly. rpmbuild injects the macro into every section's flags, so
-  the %%check C/C++ archives were LLVM bitcode that the default
-  cc/bfd-ld test links cannot read (broke the aarch64 leg; x86_64 only
-  worked via rustc's rust-lld default).
-
-* Sat Jul 18 2026 rsbtd maintainers <noreply@github.com> - 1.0.0-1
-- Version 1.0.0.
-
-* Sat Jul 18 2026 rsbtd maintainers <noreply@github.com> - 0.1.0-2
-- Run the full workspace test suite in %%check (dev profile, own
-  target dir; skippable with --without check).
-- New noarch rsbtd-webui subpackage: the prebuilt web UI at
-  /usr/share/rsbtd/webui (Source1, staged by build-rpm.sh).
-
-* Fri Jul 17 2026 rsbtd maintainers <noreply@github.com> - 0.1.0-1
-- Initial packaging: rsbtd + rsbtctl, vendored libtorrent, fat
-  cross-language LTO (clang/lld + rustc linker-plugin LTO).
+* Thu Jul 23 2026 rsbtd maintainers <noreply@github.com> - 1.0.0-1
+- Initial release
