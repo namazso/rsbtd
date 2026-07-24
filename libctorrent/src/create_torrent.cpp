@@ -9,6 +9,11 @@
 #include "ct_common.hpp"
 
 #include <libtorrent/create_torrent.hpp>
+#include <libtorrent/disk_interface.hpp>
+#include <libtorrent/io_context.hpp>
+#include <libtorrent/session.hpp>
+#include <libtorrent/session_params.hpp>
+#include <libtorrent/settings_pack.hpp>
 #include <libtorrent/torrent_info.hpp>
 
 #include <boost/system/error_code.hpp>
@@ -435,10 +440,30 @@ void ct_set_piece_hashes(
     ct::guard(err, [&]() {
         auto* lt_ct = &ct->ct;
 
+        // Cancellation throws out of the progress callback, unwinding
+        // lt::set_piece_hashes mid-run. Its locals are declared in the
+        // order (disk_aborter, file_storage, hash_state), so unwinding
+        // destroys the file_storage before the disk_aborter joins the
+        // disk threads -- which are still hashing and reading that
+        // file_storage: a use-after-free (debug builds trip the
+        // file_index_at_offset assert in file_storage.cpp). Capture the
+        // disk_interface so the callback can join the disk threads
+        // first; abort(true) from inside a completion handler is the
+        // same call libtorrent's own on_hash error path makes.
+        lt::disk_interface* disk = nullptr;
+        lt::disk_io_constructor_type disk_ctor =
+            [&disk](lt::io_context& ios, lt::settings_interface const& sett,
+                lt::counters& cnt) {
+                auto io = lt::default_disk_io_constructor(ios, sett, cnt);
+                disk = io.get();
+                return io;
+            };
+
         std::function<void(lt::piece_index_t)> callback;
         if (progress != nullptr) {
-            callback = [progress, userdata](lt::piece_index_t idx) {
+            callback = [progress, userdata, &disk](lt::piece_index_t idx) {
                 if (!progress(static_cast<int32_t>(idx), userdata)) {
+                    if (disk != nullptr) disk->abort(true);
                     throw lt::system_error(lt::error_code(
                         boost::system::errc::operation_canceled,
                         boost::system::generic_category()));
@@ -449,7 +474,8 @@ void ct_set_piece_hashes(
         }
 
         lt::error_code ec;
-        lt::set_piece_hashes(*lt_ct, base_path, callback, ec);
+        lt::set_piece_hashes(*lt_ct, base_path, lt::settings_pack{},
+            std::move(disk_ctor), callback, ec);
         if (ec) {
             throw lt::system_error(ec);
         }
