@@ -1,0 +1,12 @@
+error[E0597]: `alerts` does not live long enough
+  --> tests/ui/alert_outlives_alerts.rs:13:21
+   |
+12 |         let mut alerts = session.alerts();
+   |             ---------- binding `alerts` declared here
+13 |         let batch = alerts.next_batch().await.unwrap();
+   |                     ^^^^^^ borrowed value does not live long enough
+14 |         kept = batch.get(0);
+15 |     }
+   |     - `alerts` dropped here while still borrowed
+16 |     drop(kept);
+   |          ---- borrow later used here

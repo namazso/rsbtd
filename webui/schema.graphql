@@ -1,0 +1,5017 @@
+"""
+Input for `addTorrent`. Provide exactly one source: `magnetUri` or
+`torrentData`.
+"""
+input AddTorrentInput {
+	"""
+	A `magnet:?...` link.
+	"""
+	magnetUri: String
+	"""
+	A .torrent file, base64-encoded.
+	"""
+	torrentData: Base64
+	"""
+	Directory to store the torrent in.
+	"""
+	savePath: String!
+	"""
+	Display name used until metadata arrives (magnets only).
+	"""
+	name: String
+	"""
+	Add paused (also detaches the torrent from auto-management, so it
+	stays paused).
+	"""
+	paused: Boolean
+	"""
+	Explicitly set (true) or clear (false) the `SEQUENTIAL_DOWNLOAD`
+	flag; omitted leaves the default.
+	"""
+	sequentialDownload: Boolean
+	"""
+	Additional flags (e.g. `SEED_MODE`), ORed into the add-time
+	defaults (`UPDATE_SUBSCRIBE`, `AUTO_MANAGED`, `PAUSED`,
+	`APPLY_IP_FILTER`, `NEED_SAVE_RESUME`); this cannot clear a
+	default flag. Auto-management promptly resumes the default
+	`PAUSED`; use `paused` to add actually paused. The daemon
+	always adds `DUPLICATE_IS_ERROR`.
+	"""
+	flags: [TorrentFlag!]
+	"""
+	Tracker URLs (all tier 0), added on top of the metadata's own.
+	"""
+	trackers: [String!]
+	"""
+	HTTP/web seed URLs, added on top of the metadata's own.
+	"""
+	urlSeeds: [String!]
+	"""
+	Upload rate limit in positive bytes/s (-1 = unlimited).
+	"""
+	uploadLimit: Int
+	"""
+	Download rate limit in positive bytes/s (-1 = unlimited).
+	"""
+	downloadLimit: Int
+	"""
+	Maximum unchoked (upload) slots for this torrent
+	(-1 = unlimited, else 2..=16777214).
+	"""
+	maxUploads: Int
+	"""
+	Maximum peer connections for this torrent
+	(-1 = unlimited, else 2..=16777214).
+	"""
+	maxConnections: Int
+}
+
+"""
+Binary data as a standard base64 string (RFC 4648: `+`/`/` alphabet
+with `=` padding, not base64url).
+"""
+scalar Base64
+
+"""
+Which algorithm chooses peers to unchoke.
+"""
+enum ChokingAlgorithm {
+	"""
+	A fixed number of unchoke slots (`unchokeSlotsLimit`).
+	"""
+	FIXED_SLOTS
+	"""
+	Open up unchoke slots based on the upload rate achieved to
+	peers, controlled by `rateChokerInitialThreshold`.
+	"""
+	RATE_BASED
+}
+
+"""
+A torrent-creation option.
+"""
+enum CreateFlag {
+	"""
+	Include file modification times.
+	"""
+	MODIFICATION_TIME
+	"""
+	Store symlinks as symlinks (BEP 47).
+	"""
+	SYMLINKS
+	"""
+	v2-only torrent (no SHA-1 piece hashes).
+	"""
+	V2_ONLY
+	"""
+	v1-only torrent (no merkle trees).
+	"""
+	V1_ONLY
+	"""
+	Canonical file order and padding (BEP 52).
+	"""
+	CANONICAL_FILES
+	"""
+	Skip file attributes (executable, hidden).
+	"""
+	NO_ATTRIBUTES
+	"""
+	Canonical files without tail padding of the last file.
+	"""
+	CANONICAL_FILES_NO_TAIL_PADDING
+}
+
+"""
+A torrent-creation job. Jobs are in memory only; terminal jobs are
+pruned after about an hour.
+"""
+type CreateJob {
+	"""
+	Job id, unique within one daemon run.
+	"""
+	id: Int!
+	"""
+	Current lifecycle state.
+	"""
+	state: CreateJobState!
+	"""
+	Pieces hashed so far.
+	"""
+	piecesDone: Int!
+	"""
+	Total pieces to hash (0 until listing completes).
+	"""
+	piecesTotal: Int!
+	"""
+	Failure message; only set in the `FAILED` state.
+	"""
+	error: String
+	"""
+	Whether `torrentData` is available (finished without an
+	`outputPath`).
+	"""
+	hasTorrentData: Boolean!
+	"""
+	Where the .torrent was (or will be) written, when requested.
+	"""
+	outputPath: String
+	"""
+	The generated .torrent, when finished without an `outputPath`.
+	This is the whole file as base64 — select it only when needed.
+	"""
+	torrentData: Base64
+}
+
+"""
+The lifecycle state of a torrent-creation job.
+"""
+enum CreateJobState {
+	"""
+	Enumerating the source files.
+	"""
+	LISTING
+	"""
+	Hashing piece data.
+	"""
+	HASHING
+	"""
+	Done; the .torrent is available (terminal).
+	"""
+	FINISHED
+	"""
+	Failed; see `error` (terminal).
+	"""
+	FAILED
+	"""
+	Cancelled by `cancelCreateJob` (terminal).
+	"""
+	CANCELLED
+}
+
+"""
+Input for `startCreateTorrent`.
+"""
+input CreateTorrentInput {
+	"""
+	The daemon-local file or directory to create the torrent from.
+	"""
+	sourcePath: String!
+	"""
+	Piece size in bytes (a power of two, 16 KiB to 128 MiB); omit or
+	0 for automatic.
+	"""
+	pieceSize: Int
+	"""
+	Creation options. Without `V1_ONLY` or `V2_ONLY` (which are
+	mutually exclusive), a hybrid v1+v2 torrent is created.
+	"""
+	flags: [CreateFlag!]
+	"""
+	Trackers to embed in the metadata, with explicit tiers.
+	"""
+	trackers: [TrackerInput!]
+	"""
+	HTTP/web seed URLs to embed in the metadata.
+	"""
+	urlSeeds: [String!]
+	"""
+	Free-form comment to embed in the metadata.
+	"""
+	comment: String
+	"""
+	"Created by" string to embed in the metadata.
+	"""
+	creator: String
+	"""
+	Mark the torrent private (BEP 27): peers come from trackers
+	only, disabling DHT/PEX/LSD.
+	"""
+	private: Boolean! = false
+	"""
+	Write the .torrent to this daemon-local path instead of returning
+	it inline as base64.
+	"""
+	outputPath: String
+}
+
+"""
+OS cache behavior of disk reads and writes. Write-through only exists
+for writes; libtorrent's read paths have no equivalent.
+"""
+type DiskIoCache {
+	"""
+	Cache mode for disk reads.
+	"""
+	read: IoReadMode!
+	"""
+	Cache mode for disk writes.
+	"""
+	write: IoWriteMode!
+}
+
+"""
+OS cache behavior of disk reads and writes. Write-through only exists
+for writes; libtorrent's read paths have no equivalent.
+"""
+input DiskIoCacheInput {
+	"""
+	Cache mode for disk reads.
+	"""
+	read: IoReadMode!
+	"""
+	Cache mode for disk writes.
+	"""
+	write: IoWriteMode!
+}
+
+"""
+The encryption methods allowed on an encrypted connection. At least
+one must be enabled.
+"""
+type EncryptionMethods {
+	"""
+	Allow the plaintext method (header obfuscation only).
+	"""
+	plaintext: Boolean!
+	"""
+	Allow the RC4 method (full-stream encryption).
+	"""
+	rc4: Boolean!
+}
+
+"""
+The encryption methods allowed on an encrypted connection. At least
+one must be enabled.
+"""
+input EncryptionMethodsInput {
+	"""
+	Allow the plaintext method (header obfuscation only).
+	"""
+	plaintext: Boolean!
+	"""
+	Allow the RC4 method (full-stream encryption).
+	"""
+	rc4: Boolean!
+}
+
+"""
+How strongly to insist on protocol encryption for one direction.
+"""
+enum EncryptionPolicy {
+	"""
+	Only encrypted connections; unencrypted peers are dropped.
+	"""
+	FORCED
+	"""
+	Prefer encrypted connections, allow unencrypted ones.
+	"""
+	ENABLED
+	"""
+	Only unencrypted connections.
+	"""
+	DISABLED
+}
+
+"""
+The BitTorrent protocol-encryption policy.
+"""
+type EncryptionSettings {
+	"""
+	Policy for incoming connections.
+	"""
+	incoming: EncryptionPolicy!
+	"""
+	Policy for outgoing connections.
+	"""
+	outgoing: EncryptionPolicy!
+	"""
+	The encryption methods to allow; at least one must be enabled.
+	"""
+	methods: EncryptionMethods!
+	"""
+	Prefer RC4 when both methods are enabled (invalid otherwise).
+	"""
+	preferRc4: Boolean!
+	"""
+	Announce crypto support to trackers.
+	"""
+	announceSupport: Boolean!
+}
+
+"""
+The BitTorrent protocol-encryption policy.
+"""
+input EncryptionSettingsInput {
+	"""
+	Policy for incoming connections.
+	"""
+	incoming: EncryptionPolicy!
+	"""
+	Policy for outgoing connections.
+	"""
+	outgoing: EncryptionPolicy!
+	"""
+	The encryption methods to allow; at least one must be enabled.
+	"""
+	methods: EncryptionMethodsInput!
+	"""
+	Prefer RC4 when both methods are enabled (invalid otherwise).
+	"""
+	preferRc4: Boolean!
+	"""
+	Announce crypto support to trackers.
+	"""
+	announceSupport: Boolean!
+}
+
+"""
+A file-progress snapshot. There is no operation to request one
+directly; it is broadcast whenever serving any client's request
+fetches per-file progress (a `Torrent.files` selection).
+"""
+type FileProgressEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Downloaded bytes per file, indexed by file index.
+	"""
+	progress: [Int!]!
+}
+
+"""
+A file rename failed.
+"""
+type FileRenameFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Zero-based index of the file that failed to rename.
+	"""
+	fileIndex: Int!
+	"""
+	Failure description, when the engine supplied one.
+	"""
+	error: String
+}
+
+"""
+A file was renamed (the outcome of `renameFile`).
+"""
+type FileRenamedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Zero-based index of the renamed file.
+	"""
+	fileIndex: Int!
+	"""
+	The accepted new path, relative to the save path.
+	"""
+	newName: String!
+}
+
+"""
+A hostname (or address) and port.
+"""
+type HostPort {
+	"""
+	A hostname, IPv4 address, or bracketed IPv6 address.
+	"""
+	hostname: String!
+	"""
+	TCP or UDP port (1..=65535).
+	"""
+	port: Int!
+}
+
+"""
+A hostname (or address) and port.
+"""
+input HostPortInput {
+	"""
+	A hostname, IPv4 address, or bracketed IPv6 address.
+	"""
+	hostname: String!
+	"""
+	TCP or UDP port (1..=65535).
+	"""
+	port: Int!
+}
+
+"""
+The I2P SAM bridge configuration.
+"""
+type I2pSettings {
+	"""
+	Hostname of the SAM bridge: a hostname, IPv4 address, or IPv6
+	literal (stored bare; a bracketed literal is accepted and
+	unbracketed).
+	"""
+	hostname: String!
+	"""
+	Port of the SAM bridge.
+	"""
+	port: Int!
+	"""
+	Allow mixing regular peers with I2P peers in the same swarm
+	(weakens the anonymity of the I2P side).
+	"""
+	allowMixed: Boolean!
+	"""
+	Inbound tunnel configuration.
+	"""
+	inbound: I2pTunnel!
+	"""
+	Outbound tunnel configuration.
+	"""
+	outbound: I2pTunnel!
+}
+
+"""
+The I2P SAM bridge configuration.
+"""
+input I2pSettingsInput {
+	"""
+	Hostname of the SAM bridge: a hostname, IPv4 address, or IPv6
+	literal (stored bare; a bracketed literal is accepted and
+	unbracketed).
+	"""
+	hostname: String!
+	"""
+	Port of the SAM bridge.
+	"""
+	port: Int!
+	"""
+	Allow mixing regular peers with I2P peers in the same swarm
+	(weakens the anonymity of the I2P side).
+	"""
+	allowMixed: Boolean!
+	"""
+	Inbound tunnel configuration.
+	"""
+	inbound: I2pTunnelInput!
+	"""
+	Outbound tunnel configuration.
+	"""
+	outbound: I2pTunnelInput!
+}
+
+"""
+One direction of I2P tunnel configuration.
+"""
+type I2pTunnel {
+	"""
+	Number of parallel tunnels (1..=16).
+	"""
+	tunnels: Int!
+	"""
+	Hops per tunnel (0..=7). More hops, more anonymity, more latency.
+	"""
+	hops: Int!
+	"""
+	Random variance applied to `hops` (-7..=7).
+	"""
+	hopVariance: Int!
+}
+
+"""
+One direction of I2P tunnel configuration.
+"""
+input I2pTunnelInput {
+	"""
+	Number of parallel tunnels (1..=16).
+	"""
+	tunnels: Int!
+	"""
+	Hops per tunnel (0..=7). More hops, more anonymity, more latency.
+	"""
+	hops: Int!
+	"""
+	Random variance applied to `hops` (-7..=7).
+	"""
+	hopVariance: Int!
+}
+
+"""
+A torrent info-hash: 40 hex characters (v1/SHA-1) or 64 hex
+characters (v2/SHA-256). Input accepts either case and either hash
+of a hybrid torrent; output is lowercase and prefers v1.
+"""
+scalar InfoHash
+
+"""
+OS cache interaction for disk reads.
+"""
+enum IoReadMode {
+	"""
+	Use the OS page cache normally.
+	"""
+	ENABLE_OS_CACHE
+	"""
+	Bypass the OS page cache (O_DIRECT-style).
+	"""
+	DISABLE_OS_CACHE
+}
+
+"""
+OS cache interaction for disk writes.
+"""
+enum IoWriteMode {
+	"""
+	Use the OS page cache normally.
+	"""
+	ENABLE_OS_CACHE
+	"""
+	Bypass the OS page cache (O_DIRECT-style).
+	"""
+	DISABLE_OS_CACHE
+	"""
+	Write through the OS page cache but flush immediately.
+	"""
+	WRITE_THROUGH
+}
+
+"""
+One IP filter rule.
+"""
+type IpFilterRule {
+	"""
+	First address of the range (inclusive).
+	"""
+	first: String!
+	"""
+	Last address of the range (inclusive).
+	"""
+	last: String!
+	"""
+	Whether addresses in the range are blocked (true) or explicitly
+	allowed (false).
+	"""
+	blocked: Boolean!
+}
+
+"""
+One IP filter rule for `setIpFilter`.
+"""
+input IpFilterRuleInput {
+	"""
+	First address of the range (inclusive).
+	"""
+	first: String!
+	"""
+	Last address of the range (inclusive; same family as `first`).
+	"""
+	last: String!
+	"""
+	Whether to block addresses in the range (true) or explicitly
+	allow them (false). Later rules win on overlap.
+	"""
+	blocked: Boolean!
+}
+
+"""
+One listen endpoint for incoming connections.
+"""
+type ListenInterface {
+	"""
+	An IP address or network device name — hostnames are not
+	resolved here, and a nonexistent device opens no socket (silently,
+	beyond a listen-failed event). Windows device names are GUID
+	strings in curly braces.
+	"""
+	interface: String!
+	"""
+	Port 0 asks the OS for an ephemeral port.
+	"""
+	port: Int!
+	"""
+	Accept SSL/TLS peer connections on this endpoint.
+	"""
+	ssl: Boolean!
+	"""
+	Treat this endpoint as local-network only: do not announce it
+	to trackers/DHT beyond the local network.
+	"""
+	local: Boolean!
+}
+
+"""
+One listen endpoint for incoming connections.
+"""
+input ListenInterfaceInput {
+	"""
+	An IP address or network device name — hostnames are not
+	resolved here, and a nonexistent device opens no socket (silently,
+	beyond a listen-failed event). Windows device names are GUID
+	strings in curly braces.
+	"""
+	interface: String!
+	"""
+	Port 0 asks the OS for an ephemeral port.
+	"""
+	port: Int!
+	"""
+	Accept SSL/TLS peer connections on this endpoint.
+	"""
+	ssl: Boolean! = false
+	"""
+	Treat this endpoint as local-network only: do not announce it
+	to trackers/DHT beyond the local network.
+	"""
+	local: Boolean! = false
+}
+
+"""
+Magnet metadata acquisition failed.
+"""
+type MetadataFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Failure description, when the engine supplied one.
+	"""
+	error: String
+}
+
+"""
+Magnet metadata was received. A hybrid magnet may gain its second
+info-hash at this point.
+"""
+type MetadataReceivedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+How rate limits are divided between TCP and uTP peers when both
+transports are in use.
+"""
+enum MixedModeAlgorithm {
+	"""
+	Throttle TCP down to give uTP connections headroom.
+	"""
+	PREFER_TCP
+	"""
+	Divide bandwidth proportionally to the number of peers on each
+	transport.
+	"""
+	PEER_PROPORTIONAL
+}
+
+"""
+How to flush pieces to disk with the mmap disk I/O backend.
+"""
+enum MmapWriteMode {
+	"""
+	Always write files with pwrite() (never memory-map them).
+	"""
+	ALWAYS_PWRITE
+	"""
+	Always write files via memory-mapped views.
+	"""
+	ALWAYS_MMAP_WRITE
+	"""
+	Memory-map for writing only when the file fits the mmap size
+	cutoff.
+	"""
+	AUTO_MMAP_WRITE
+}
+
+"""
+Conflict handling for `moveStorage`.
+"""
+enum MoveMode {
+	"""
+	Replace whatever is at the target (the default).
+	"""
+	ALWAYS_REPLACE_FILES
+	"""
+	Abort the move if any target file exists.
+	"""
+	FAIL_IF_EXIST
+	"""
+	Keep existing target files, moving only the missing ones.
+	"""
+	DONT_REPLACE
+	"""
+	Only change the save path; no files are moved. The files found
+	at the new path are then re-checked.
+	"""
+	RESET_SAVE_PATH
+	"""
+	Only change the save path; do not move or check files.
+	"""
+	RESET_SAVE_PATH_UNCHECKED
+}
+
+"""
+The write surface. Most Boolean mutations post work asynchronously:
+`true` means the command was accepted, not that its effect is
+already visible. `addTorrent`, `removeTorrent`, `moveStorage`,
+`renameFile`, `readPiece`, `scrapeTracker`, `saveResumeData`, and
+`applySettings` wait for the outcome instead; `setTorrentFlags`
+applies immediately and returns the resulting flags.
+"""
+type MutationRoot {
+	"""
+	Adds a torrent from a magnet link or a .torrent file and waits
+	until it is registered. Adding a duplicate of an existing
+	torrent is an error.
+	"""
+	addTorrent(input: AddTorrentInput!): Torrent!
+	"""
+	Removes a torrent and waits until it has left the session. With
+	`deleteFiles`, additionally waits for the disk deletion outcome:
+	success means the files are gone, and a failed deletion is
+	reported as an error (the torrent is still removed).
+	"""
+	removeTorrent(infoHash: InfoHash!, deleteFiles: Boolean! = false): Boolean!
+	"""
+	Pauses a torrent. With `detach` (the default), also removes it
+	from auto-management so the queue does not resume it. With
+	`graceful`, outstanding downloaded blocks are waited for before
+	disconnecting peers.
+	"""
+	pauseTorrent(infoHash: InfoHash!, detach: Boolean! = true, graceful: Boolean! = false): Boolean!
+	"""
+	Resumes a paused torrent. Does not restore auto-management; set
+	the `AUTO_MANAGED` flag separately if wanted.
+	"""
+	resumeTorrent(infoHash: InfoHash!): Boolean!
+	"""
+	Rechecks all downloaded data against the piece hashes.
+	"""
+	forceRecheck(infoHash: InfoHash!): Boolean!
+	"""
+	Schedules a tracker announce `seconds` from now (0 = immediately;
+	tracker minimum intervals are still honored). `trackerIndex` -1
+	means all trackers, otherwise it indexes the current `trackers`
+	list.
+	"""
+	forceReannounce(infoHash: InfoHash!, seconds: Int! = 0, trackerIndex: Int! = -1): Boolean!
+	"""
+	Re-announces to the DHT.
+	"""
+	forceDhtAnnounce(infoHash: InfoHash!): Boolean!
+	"""
+	Clears a torrent's error state so it can be resumed.
+	"""
+	clearError(infoHash: InfoHash!): Boolean!
+	"""
+	Flushes the disk cache for the torrent.
+	"""
+	flushCache(infoHash: InfoHash!): Boolean!
+	"""
+	Generates and persists resume data for the torrent now.
+	"""
+	saveResumeData(infoHash: InfoHash!): Boolean!
+	"""
+	Moves the torrent's storage, returning the new path once the move
+	completed (may take minutes across filesystems).
+	"""
+	moveStorage(infoHash: InfoHash!, path: String!, mode: MoveMode! = ALWAYS_REPLACE_FILES): String!
+	"""
+	Renames a file within the torrent, returning the accepted name.
+	"""
+	renameFile(infoHash: InfoHash!, index: Int!, name: String!): String!
+	"""
+	Sets one file's download priority (0 = skip, 1..=7). Errors
+	before metadata is available or for an out-of-range index.
+	"""
+	setFilePriority(infoHash: InfoHash!, index: Int!, priority: Int!): Boolean!
+	"""
+	Sets download priorities for all files at once, in file-index
+	order. Send one value per file: files beyond the end of a
+	shorter list are reset to the default priority 4, and pad files
+	always stay at 0. Errors before metadata is available or if the
+	list is longer than the number of files.
+	"""
+	setFilePriorities(infoHash: InfoHash!, priorities: [Int!]!): Boolean!
+	"""
+	Sets one piece's download priority (0 = skip, 1..=7).
+	"""
+	setPiecePriority(infoHash: InfoHash!, piece: Int!, priority: Int!): Boolean!
+	"""
+	Sets download priorities for pieces, in piece-index order.
+	Pieces beyond the end of the list keep their current priority.
+	Errors before metadata is available or if the list is longer
+	than the number of pieces; a no-op while seeding.
+	"""
+	setPiecePriorities(infoHash: InfoHash!, priorities: [Int!]!): Boolean!
+	"""
+	Requests a piece to be downloaded early (`deadlineMs` from now).
+	"""
+	setPieceDeadline(infoHash: InfoHash!, piece: Int!, deadlineMs: Int!): Boolean!
+	"""
+	Removes a piece's deadline.
+	"""
+	resetPieceDeadline(infoHash: InfoHash!, piece: Int!): Boolean!
+	"""
+	Removes all piece deadlines.
+	"""
+	clearPieceDeadlines(infoHash: InfoHash!): Boolean!
+	"""
+	Sets per-torrent limits; omitted arguments are left unchanged.
+	Rates are positive bytes/s; -1 removes the per-torrent limit
+	(session-wide limits still apply). Max uploads/connections take -1 or values in
+	2..=16777214. An invalid value rejects the whole mutation without
+	changing any field.
+	"""
+	setTorrentLimits(infoHash: InfoHash!, uploadLimit: Int, downloadLimit: Int, maxUploads: Int, maxConnections: Int): Boolean!
+	"""
+	Atomically sets and unsets torrent flags, returning the
+	resulting flag list. A flag in both lists ends up set. Some
+	flags only matter at add time or are engine-managed; see
+	`TorrentFlag`.
+	"""
+	setTorrentFlags(infoHash: InfoHash!, set: [TorrentFlag!]! = [], unset: [TorrentFlag!]! = []): [TorrentFlag!]!
+	"""
+	Moves the torrent to the top of the download queue.
+	"""
+	queueTop(infoHash: InfoHash!): Boolean!
+	"""
+	Moves the torrent one step up the download queue.
+	"""
+	queueUp(infoHash: InfoHash!): Boolean!
+	"""
+	Moves the torrent one step down the download queue.
+	"""
+	queueDown(infoHash: InfoHash!): Boolean!
+	"""
+	Moves the torrent to the bottom of the download queue.
+	"""
+	queueBottom(infoHash: InfoHash!): Boolean!
+	"""
+	Sets the torrent's queue position (0-based; clamped to the end
+	of the queue).
+	"""
+	setQueuePosition(infoHash: InfoHash!, position: Int!): Boolean!
+	"""
+	Adds a tracker to the torrent. `tier` must be within 0..=255
+	(tiers are stored as 8-bit values). The change reaches the resume
+	file with the periodic sweep or the shutdown checkpoint.
+	"""
+	addTracker(infoHash: InfoHash!, url: String!, tier: Int! = 0): Boolean!
+	"""
+	Replaces the torrent's full tracker list (an empty list removes
+	all trackers), then durably persists the torrent's resume data so
+	removals survive a restart. Tiers must be within 0..=255.
+	"""
+	replaceTrackers(infoHash: InfoHash!, trackers: [TrackerInput!]!): Boolean!
+	"""
+	Scrapes a tracker and waits for its response, updating the
+	torrent's swarm counts. `trackerIndex` -1 means the last working
+	tracker, otherwise it indexes the current `trackers` list.
+	"""
+	scrapeTracker(infoHash: InfoHash!, trackerIndex: Int! = -1): ScrapeResult!
+	"""
+	Adds an HTTP/web seed.
+	"""
+	addUrlSeed(infoHash: InfoHash!, url: String!): Boolean!
+	"""
+	Removes an HTTP/web seed.
+	"""
+	removeUrlSeed(infoHash: InfoHash!, url: String!): Boolean!
+	"""
+	Manually connects a peer. `address` is an IP literal plus port —
+	`1.2.3.4:6881` or `[2001:db8::1]:6881`; hostnames are not
+	accepted. Acceptance does not imply a successful handshake.
+	"""
+	connectPeer(infoHash: InfoHash!, address: String!): Boolean!
+	"""
+	Reads one already-downloaded piece from storage and returns its
+	exact bytes (the final piece may be shorter than `pieceLength`).
+	"""
+	readPiece(infoHash: InfoHash!, piece: Int!): Base64!
+	"""
+	Applies a settings delta atomically and persists it, returning
+	the full new effective settings (select the fields you need).
+	Omitted input fields are left unchanged; `null` disables the
+	nullable groups (`proxy`, `i2p`, `outgoingPortRange`). Any
+	validation error rejects the whole delta.
+	"""
+	applySettings(input: SettingsInput!): Settings!
+	"""
+	Replaces the session's IP filter with the given rules and persists
+	it. An empty list clears the filter.
+	"""
+	setIpFilter(rules: [IpFilterRuleInput!]!): Boolean!
+	"""
+	Starts an async torrent-creation job (hashing runs on a blocking
+	thread; observe it via the `createJob` query or the
+	`createJobProgress` subscription).
+	"""
+	startCreateTorrent(input: CreateTorrentInput!): CreateJob!
+	"""
+	Cancels a running creation job; hashing stops within one piece
+	and any partial result is discarded.
+	Returns false if the job is unknown or already finished.
+	"""
+	cancelCreateJob(id: Int!): Boolean!
+	"""
+	Pauses the whole session (all torrents).
+	"""
+	pauseSession: Boolean!
+	"""
+	Resumes the session after `pauseSession`.
+	"""
+	resumeSession: Boolean!
+	"""
+	Closes and reopens all listen and outgoing sockets (use after the
+	host's network configuration changed).
+	"""
+	reopenNetworkSockets(mapPorts: Boolean! = true): Boolean!
+}
+
+"""
+One peer connection of a torrent.
+"""
+type Peer {
+	"""
+	The peer's remote `IP:port` (IPv6 bracketed); `null` for I2P
+	peers.
+	"""
+	address: String
+	"""
+	Our local `IP:port` of this connection (IPv6 bracketed); `null`
+	for I2P peers.
+	"""
+	localEndpoint: String
+	"""
+	The peer's 20-byte BitTorrent peer ID, base64-encoded.
+	"""
+	peerId: Base64!
+	"""
+	Best-effort client name/version derived from the peer ID or the
+	extension handshake.
+	"""
+	client: String!
+	"""
+	How this peer is connected.
+	"""
+	connectionType: PeerConnectionType!
+	"""
+	Peer connection state flags.
+	"""
+	flags: [PeerFlag!]!
+	"""
+	Where we discovered this peer (all sources it was seen from).
+	"""
+	source: [PeerSource!]!
+	"""
+	The peer's completion of the torrent, in parts per million
+	(0..=1,000,000).
+	"""
+	progressPpm: Int!
+	"""
+	Current download rate from this peer including protocol
+	overhead, bytes/s.
+	"""
+	downSpeed: Int!
+	"""
+	Current upload rate to this peer including protocol overhead,
+	bytes/s.
+	"""
+	upSpeed: Int!
+	"""
+	Current payload-only download rate from this peer, bytes/s.
+	"""
+	payloadDownSpeed: Int!
+	"""
+	Current payload-only upload rate to this peer, bytes/s.
+	"""
+	payloadUpSpeed: Int!
+	"""
+	Payload bytes received from this peer on this connection.
+	"""
+	totalDownload: Int!
+	"""
+	Payload bytes sent to this peer on this connection.
+	"""
+	totalUpload: Int!
+	"""
+	Microseconds since the last request was sent to this peer.
+	"""
+	lastRequestUs: Int!
+	"""
+	Microseconds since the last transfer activity on this
+	connection.
+	"""
+	lastActiveUs: Int!
+	"""
+	Number of pieces involving this peer that failed the hash check.
+	"""
+	numHashfails: Int!
+	"""
+	Number of failed connection attempts to this peer; rediscovery
+	from a peer source can decrease it.
+	"""
+	failcount: Int!
+	"""
+	Highest download rate seen on this connection, bytes/s.
+	"""
+	downloadRatePeak: Int!
+	"""
+	Highest upload rate seen on this connection, bytes/s.
+	"""
+	uploadRatePeak: Int!
+	"""
+	Number of pieces the peer has.
+	"""
+	numPieces: Int!
+	"""
+	Estimated connect-time round-trip time in milliseconds; may be 0
+	for incoming connections.
+	"""
+	rtt: Int!
+}
+
+"""
+How a peer is connected.
+"""
+enum PeerConnectionType {
+	"""
+	A regular BitTorrent peer connection.
+	"""
+	BITTORRENT
+	"""
+	A web seed (BEP 19, `url-list`).
+	"""
+	WEB_SEED
+	"""
+	An HTTP seed (BEP 17, `httpseeds`).
+	"""
+	HTTP_SEED
+}
+
+"""
+A peer connection state or capability flag. Flags this API version
+does not recognize are omitted.
+"""
+enum PeerFlag {
+	"""
+	We want pieces this peer has.
+	"""
+	INTERESTING
+	"""
+	We are choking this peer (not uploading to it).
+	"""
+	CHOKED
+	"""
+	The peer wants pieces we have.
+	"""
+	REMOTE_INTERESTED
+	"""
+	The peer is choking us (not uploading to us).
+	"""
+	REMOTE_CHOKED
+	"""
+	The peer supports the extension protocol.
+	"""
+	SUPPORTS_EXTENSIONS
+	"""
+	We initiated this connection (as opposed to an incoming one).
+	"""
+	OUTGOING_CONNECTION
+	"""
+	Still handshaking; the peer's capabilities are not known yet.
+	"""
+	HANDSHAKE
+	"""
+	The connection is still being established.
+	"""
+	CONNECTING
+	"""
+	The peer participated in a piece that failed its hash check and
+	only whole pieces are requested from it until it clears parole.
+	"""
+	ON_PAROLE
+	"""
+	The peer has every piece.
+	"""
+	SEED
+	"""
+	The peer holds the optimistic unchoke slot.
+	"""
+	OPTIMISTIC_UNCHOKE
+	"""
+	The peer has stopped sending us requested blocks (snubbed).
+	"""
+	SNUBBED
+	"""
+	The peer announced it will only upload (e.g. a partial seed).
+	"""
+	UPLOAD_ONLY
+	"""
+	End-game mode: outstanding blocks may be requested from this
+	peer redundantly.
+	"""
+	ENDGAME_MODE
+	"""
+	The connection was established through NAT hole punching.
+	"""
+	HOLEPUNCHED
+	"""
+	The connection runs over an I2P socket.
+	"""
+	I2P_SOCKET
+	"""
+	The connection runs over uTP.
+	"""
+	UTP_SOCKET
+	"""
+	The connection runs over SSL/TLS.
+	"""
+	SSL_SOCKET
+	"""
+	The connection is encrypted with the RC4 method (full-stream
+	encryption).
+	"""
+	RC4_ENCRYPTED
+	"""
+	The connection used an obfuscated handshake and carries the
+	payload in plaintext.
+	"""
+	PLAINTEXT_ENCRYPTED
+}
+
+"""
+Where we discovered a peer.
+"""
+enum PeerSource {
+	"""
+	From a tracker announce response.
+	"""
+	TRACKER
+	"""
+	From the DHT.
+	"""
+	DHT
+	"""
+	From peer exchange (PEX) with another peer.
+	"""
+	PEX
+	"""
+	From Local Service Discovery on the local network.
+	"""
+	LSD
+	"""
+	Restored from resume data.
+	"""
+	RESUME_DATA
+	"""
+	The peer connected to us.
+	"""
+	INCOMING
+}
+
+"""
+The peer transport protocols in use, per connection direction.
+"""
+type PeerTransports {
+	"""
+	Plain TCP peer connections.
+	"""
+	tcp: TransportDirections!
+	"""
+	uTP (micro transport protocol) peer connections over UDP.
+	"""
+	utp: TransportDirections!
+}
+
+"""
+The peer transport protocols in use, per connection direction.
+"""
+input PeerTransportsInput {
+	"""
+	Plain TCP peer connections.
+	"""
+	tcp: TransportDirectionsInput!
+	"""
+	uTP (micro transport protocol) peer connections over UDP.
+	"""
+	utp: TransportDirectionsInput!
+}
+
+"""
+A peer-list snapshot; only the count is exposed. There is no
+operation to request one directly; it is broadcast whenever serving
+any client's request fetches the peer list (a `Torrent.peers`
+selection).
+"""
+type PeersEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Number of connected peers in the snapshot.
+	"""
+	peerCount: Int!
+}
+
+"""
+Piece availability.
+"""
+type PieceInfo {
+	"""
+	Total number of pieces; `null` until metadata is available.
+	"""
+	total: Int
+	"""
+	Number of pieces downloaded.
+	"""
+	have: Int!
+	"""
+	Packed have-bitfield (bit 7 of byte 0 is piece 0, descending
+	bits; unused trailing bits are zero); only present when requested
+	via `includeBitfield`.
+	"""
+	bitfield: Base64
+}
+
+"""
+An inclusive port range (`first` >= 1, `last` >= `first`).
+"""
+type PortRange {
+	"""
+	First port of the range (inclusive).
+	"""
+	first: Int!
+	"""
+	Last port of the range (inclusive).
+	"""
+	last: Int!
+}
+
+"""
+An inclusive port range (`first` >= 1, `last` >= `first`).
+"""
+input PortRangeInput {
+	"""
+	First port of the range (inclusive).
+	"""
+	first: Int!
+	"""
+	Last port of the range (inclusive).
+	"""
+	last: Int!
+}
+
+"""
+The protocol spoken to the proxy server.
+"""
+enum ProxyProtocol {
+	"""
+	SOCKS4; requires `username`, cannot resolve hostnames remotely.
+	"""
+	SOCKS4
+	"""
+	SOCKS5 without authentication.
+	"""
+	SOCKS5
+	"""
+	SOCKS5 with username/password authentication (RFC 1929).
+	"""
+	SOCKS5_PASSWORD
+	"""
+	An HTTP proxy supporting CONNECT, without authentication.
+	"""
+	HTTP
+	"""
+	An HTTP proxy with basic authentication.
+	"""
+	HTTP_PASSWORD
+}
+
+"""
+A proxy for outgoing connections. On write, combinations the
+protocol cannot express (e.g. credentials on plain SOCKS5) are
+rejected rather than silently ignored.
+"""
+type ProxySettings {
+	"""
+	The protocol spoken to the proxy server.
+	"""
+	protocol: ProxyProtocol!
+	"""
+	Hostname or address of the proxy server.
+	"""
+	hostname: String!
+	"""
+	Port of the proxy server (1..=65535).
+	"""
+	port: Int!
+	"""
+	Required by SOCKS4 and the `*_PASSWORD` protocols, forbidden
+	otherwise (empty when unused).
+	"""
+	username: String!
+	"""
+	Required by the `*_PASSWORD` protocols, forbidden otherwise
+	(empty when unused).
+	"""
+	password: String!
+	"""
+	Resolve hostnames through the proxy instead of locally, hiding
+	DNS lookups from the local network (not supported by SOCKS4).
+	"""
+	resolveHostnames: Boolean!
+	"""
+	Route peer connections through the proxy.
+	"""
+	peerConnections: Boolean!
+	"""
+	Route tracker announces and scrapes through the proxy.
+	"""
+	trackerConnections: Boolean!
+	"""
+	SOCKS5 only: send the actual local port in the UDP ASSOCIATE
+	command instead of 0, for proxies that require it.
+	"""
+	socks5UdpSendLocalEndpoint: Boolean!
+	"""
+	HTTP only: send the hostname instead of the resolved IP in
+	CONNECT requests.
+	"""
+	sendHostnameInConnect: Boolean!
+}
+
+"""
+A proxy for outgoing connections. On write, combinations the
+protocol cannot express (e.g. credentials on plain SOCKS5) are
+rejected rather than silently ignored.
+"""
+input ProxySettingsInput {
+	"""
+	The protocol spoken to the proxy server.
+	"""
+	protocol: ProxyProtocol!
+	"""
+	Hostname or address of the proxy server.
+	"""
+	hostname: String!
+	"""
+	Port of the proxy server (1..=65535).
+	"""
+	port: Int!
+	"""
+	Required by SOCKS4 and the `*_PASSWORD` protocols, forbidden
+	otherwise (empty when unused).
+	"""
+	username: String! = ""
+	"""
+	Required by the `*_PASSWORD` protocols, forbidden otherwise
+	(empty when unused).
+	"""
+	password: String! = ""
+	"""
+	Resolve hostnames through the proxy instead of locally, hiding
+	DNS lookups from the local network (not supported by SOCKS4).
+	"""
+	resolveHostnames: Boolean!
+	"""
+	Route peer connections through the proxy.
+	"""
+	peerConnections: Boolean!
+	"""
+	Route tracker announces and scrapes through the proxy.
+	"""
+	trackerConnections: Boolean!
+	"""
+	SOCKS5 only: send the actual local port in the UDP ASSOCIATE
+	command instead of 0, for proxies that require it.
+	"""
+	socks5UdpSendLocalEndpoint: Boolean! = false
+	"""
+	HTTP only: send the hostname instead of the resolved IP in
+	CONNECT requests.
+	"""
+	sendHostnameInConnect: Boolean! = false
+}
+
+"""
+The read surface.
+"""
+type QueryRoot {
+	"""
+	Versions of the daemon and its embedded BitTorrent engine.
+	"""
+	version: VersionInfo!
+	"""
+	Session-level state.
+	"""
+	session: SessionInfo!
+	"""
+	All torrents (ordered by add time), optionally filtered by state.
+	"""
+	torrents(state: TorrentState): [Torrent!]!
+	"""
+	One torrent by v1 or v2 info-hash, or `null` if not in the session.
+	"""
+	torrent(infoHash: InfoHash!): Torrent
+	"""
+	One sample of the session statistics counters (all metrics, or
+	the named subset). Unknown names are silently omitted, and
+	results follow the daemon's fixed metric-table order, not input
+	order. The set of metric names depends on the daemon build;
+	discover it by querying without `names`.
+	"""
+	sessionStats(names: [String!]): [StatValue!]!
+	"""
+	The daemon's effective configuration. Every public setting is
+	an explicit, documented field; select the fields you need.
+	Change settings with `applySettings`.
+	"""
+	settings: Settings!
+	"""
+	All torrent-creation jobs that have not been pruned (terminal jobs
+	are kept for an hour).
+	"""
+	createJobs: [CreateJob!]!
+	"""
+	One torrent-creation job, or `null` if unknown or pruned.
+	"""
+	createJob(id: Int!): CreateJob
+	"""
+	The effective IP filter, exported as normalized non-overlapping
+	ranges — not necessarily the same list that was submitted to
+	`setIpFilter` (it can include explicit allow ranges, and
+	adjacent rules may be merged or split).
+	"""
+	ipFilter: [IpFilterRule!]!
+}
+
+"""
+A piece read completed (the outcome of `readPiece`).
+"""
+type ReadPieceEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Zero-based piece index.
+	"""
+	piece: Int!
+	"""
+	The exact piece bytes (the final piece may be shorter than
+	`pieceLength`); `null` when the read failed.
+	"""
+	data: Base64
+	"""
+	Failure description, when the read failed.
+	"""
+	error: String
+}
+
+"""
+Generating or persisting resume data failed.
+"""
+type ResumeDataFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Failure description. Nullable only so that `error` merges across
+	event types in one selection; this event always carries one.
+	"""
+	error: String
+}
+
+"""
+Resume data was generated and persisted.
+"""
+type ResumeDataSavedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+A tracker scrape failed.
+"""
+type ScrapeFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The URL of the tracker that failed, when known.
+	"""
+	trackerUrl: String
+	"""
+	Failure description. Nullable only so that `error` merges across
+	event types in one selection; this event always carries one.
+	"""
+	error: String
+}
+
+"""
+A tracker answered a scrape (the outcome of `scrapeTracker`).
+"""
+type ScrapeReplyEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The URL of the tracker that answered, when known.
+	"""
+	trackerUrl: String
+	"""
+	Downloaders in the swarm.
+	"""
+	incomplete: Int!
+	"""
+	Seeds in the swarm.
+	"""
+	complete: Int!
+}
+
+"""
+The response to a tracker scrape.
+"""
+type ScrapeResult {
+	"""
+	The URL of the tracker that answered, when known.
+	"""
+	trackerUrl: String
+	"""
+	Seeds in the swarm.
+	"""
+	complete: Int!
+	"""
+	Downloaders in the swarm.
+	"""
+	incomplete: Int!
+}
+
+"""
+Which algorithm chooses peers to unchoke while seeding.
+"""
+enum SeedChokingAlgorithm {
+	"""
+	Round-robin between peers, to distribute pieces widely.
+	"""
+	ROUND_ROBIN
+	"""
+	Prefer the peers we upload to the fastest.
+	"""
+	FASTEST_UPLOAD
+	"""
+	Prefer peers with the least progress, to counter leech-only
+	clients.
+	"""
+	ANTI_LEECH
+}
+
+"""
+A fatal session-level error.
+"""
+type SessionErrorEvent {
+	"""
+	Error description. Nullable only to stay merge-compatible with the
+	`error` field of the other event types; it is always set.
+	"""
+	error: String
+}
+
+"""
+Session-level state.
+"""
+type SessionInfo {
+	"""
+	Whether the whole session is paused (`pauseSession`). Independent
+	of each torrent's own pause flag.
+	"""
+	isPaused: Boolean!
+	"""
+	Whether at least one listen socket is open.
+	"""
+	isListening: Boolean!
+	"""
+	Whether the DHT node is running.
+	"""
+	isDhtRunning: Boolean!
+	"""
+	Port the session listens on for peer connections (0 if none).
+	"""
+	listenPort: Int!
+	"""
+	Port the session listens on for SSL torrent connections (0 if none).
+	"""
+	sslListenPort: Int!
+	"""
+	Number of torrents in the session.
+	"""
+	torrentCount: Int!
+}
+
+"""
+The daemon's effective configuration.
+
+Every public setting is one explicit field; use GraphQL field
+selection to read any subset. Change settings with `applySettings`.
+"""
+type Settings {
+	"""
+	The IP address to pass to trackers as the `&ip=` announce
+	parameter. Empty (the default) omits the parameter.
+	
+	Only useful in the special case where the seed runs on the same
+	host as the tracker and the tracker honors the parameter (normal
+	trackers do not). Do not set it unless you also control the
+	tracker.
+	"""
+	announceIp: String!
+	"""
+	The client name and version identifier sent to peers in the
+	extension handshake. Empty (the default) sends the `userAgent`
+	identity instead. Must be valid UTF-8.
+	"""
+	handshakeClientVersion: String!
+	"""
+	The fingerprint prefix of the peer ID sent to peers,
+	conventionally encoding the client name and version (e.g.
+	`-qB5050-`). A value of 20 bytes or longer is truncated to 20
+	bytes and used as the entire peer ID.
+	"""
+	peerFingerprint: String!
+	"""
+	Overrides the gateway address used by the NAT-PMP service. When
+	empty (the default), the default gateway is discovered
+	automatically. Only read when NAT-PMP starts: to change it while
+	NAT-PMP is running, disable and re-enable `enableNatpmp`.
+	"""
+	natpmpGateway: String!
+	"""
+	Whether to accept multiple peer connections from the same IP
+	address. Rejecting them (the default) prevents abusive behavior,
+	and the logic that identifies duplicate peers is more reliable
+	that way; enabling this is not recommended.
+	"""
+	allowMultipleConnectionsPerIp: Boolean!
+	"""
+	Whether to send `have` messages to peers that already have the
+	piece. Typically unnecessary, but occasionally useful for peers
+	that collect statistics.
+	"""
+	sendRedundantHave: Boolean!
+	"""
+	When true, the DHT is only used for torrents whose trackers have
+	all failed (by explicit error or timeout). When false, the DHT is
+	used regardless of tracker state.
+	"""
+	useDhtAsFallback: Boolean!
+	"""
+	Whether the UPnP service ignores broadcast responses from devices
+	outside the local subnet — a way to avoid talking to other
+	people's routers by mistake.
+	"""
+	upnpIgnoreNonrouters: Boolean!
+	"""
+	Whether to use parole mode: a peer that participated in a piece
+	that failed its hash check may only download whole pieces. If a
+	whole piece downloaded from a peer on parole fails its hash
+	check, that peer is banned; a passing piece releases it from
+	parole.
+	"""
+	useParoleMode: Boolean!
+	"""
+	When true, auto-management prefers seeding torrents when handing
+	out active slots; when false, downloading torrents are preferred.
+	"""
+	autoManagePreferSeeds: Boolean!
+	"""
+	When true, torrents without any payload transfer are not counted
+	against the `activeSeeds` and `activeDownloads` limits, so idle
+	torrents do not occupy active slots and available bandwidth is
+	more likely to be used. `inactiveDownRate`, `inactiveUpRate`, and
+	`autoManageStartup` control what counts as inactive.
+	"""
+	dontCountSlowTorrents: Boolean!
+	"""
+	Whether to close connections that no longer serve a purpose for
+	either end, for instance between two peers that have both
+	completed their downloads.
+	"""
+	closeRedundantConnections: Boolean!
+	"""
+	When true, partially downloaded pieces are picked before rarer
+	pieces. When false, rare pieces always win unless the number of
+	partial pieces grows out of proportion.
+	"""
+	prioritizePartialPieces: Boolean!
+	"""
+	When true, estimated TCP/IP overhead is drained from the rate
+	limiters, so total traffic stays within the configured limits.
+	"""
+	rateLimitIpOverhead: Boolean!
+	"""
+	When true, one tracker from every tier is announced to (the
+	uTorrent behavior). When false, announcing follows the
+	multi-tracker specification and stops at the first responding
+	tier. See also `announceToAllTrackers`.
+	"""
+	announceToAllTiers: Boolean!
+	"""
+	When true, all trackers within a tier are announced to in
+	parallel; if every tracker in tier 0 fails, all of tier 1 is
+	announced too. When false, announcing follows the multi-tracker
+	specification, trying one tracker at a time within a tier. See
+	also `announceToAllTiers`.
+	"""
+	announceToAllTrackers: Boolean!
+	"""
+	When true, trackers may be reordered so that a UDP tracker is
+	tried before HTTP trackers of the same hostname. When false,
+	tracker tiers are respected with no protocol preference.
+	"""
+	preferUdpTrackers: Boolean!
+	"""
+	Linux only: open files with `O_NOATIME`, which can improve disk
+	performance by skipping access-time updates.
+	"""
+	noAtimeStorage: Boolean!
+	"""
+	Whether an incoming peer connection may start a torrent that
+	auto-management has paused (queued). Queued torrents normally
+	stay stopped to save announce overhead and unchoke slots, but a
+	peer that still finds us can be served when this is enabled.
+	"""
+	incomingStartsQueuedTorrents: Boolean!
+	"""
+	When true, the downloaded counter sent to trackers includes
+	redundant payload bytes; when false, redundancy is excluded.
+	"""
+	reportTrueDownloaded: Boolean!
+	"""
+	Controls when a block may be requested from a second peer. When
+	true, a block is only requested twice once every piece left to
+	download already has an outstanding request; this avoids
+	redundant downloads at some cost in progress. When false, every
+	peer connection is kept busy even if that duplicates requests
+	already outstanding elsewhere.
+	"""
+	strictEndGameMode: Boolean!
+	"""
+	What to do when resume data is missing or incomplete: true skips
+	checking existing files and goes straight to downloading
+	(assuming none of the data is present); false checks whatever is
+	already on disk.
+	"""
+	noRecheckIncompleteResume: Boolean!
+	"""
+	When true, the client tries to hide its identity to a certain
+	degree: a generic user agent is sent to trackers (except for
+	private torrents), the local IPv4/IPv6 addresses are not sent to
+	private trackers as query parameters, a configured `announceIp`
+	is not sent, and the client version is not sent to peers in the
+	extension handshake.
+	"""
+	anonymousMode: Boolean!
+	"""
+	Whether data downloaded from web seeds is reported to the
+	tracker. Disabling this also excludes web-seed traffic from
+	other transfer statistics and rate reporting.
+	"""
+	reportWebSeedDownloads: Boolean!
+	"""
+	Whether seeding (and finished) torrents make outgoing peer
+	connections. Disabling this only makes sense in very specific
+	setups where outgoing connections are expensive and every peer is
+	reachable without them (no firewalls or NATs).
+	"""
+	seedingOutgoingConnections: Boolean!
+	"""
+	When true, no outgoing connections are attempted to peers on
+	ports below 1024 — a precaution against being used as part of a
+	DDoS attack.
+	"""
+	noConnectPrivilegedPorts: Boolean!
+	"""
+	When true, connection attempts per second may be throttled below
+	`connectionSpeed` when close to the connection limit, spreading
+	attempts evenly over time instead of connecting — and timing out
+	— in batches.
+	"""
+	smoothConnects: Boolean!
+	"""
+	When true, every web-seed request carries the user agent; when
+	false, only the first request per HTTP connection does.
+	"""
+	alwaysSendUserAgent: Boolean!
+	"""
+	Whether the session IP filter also applies to trackers, not just
+	peers. Irrelevant when no IP filter is set.
+	"""
+	applyIpFilterToTrackers: Boolean!
+	"""
+	Whether web seeds that send bad data are banned.
+	"""
+	banWebSeeds: Boolean!
+	"""
+	When false, share-mode support (the `SHARE_MODE` torrent flag) is
+	not advertised to peers.
+	"""
+	supportShareMode: Boolean!
+	"""
+	Whether the number of redundant bytes downloaded is reported to
+	the tracker.
+	"""
+	reportRedundantBytes: Boolean!
+	"""
+	When true, if binding the configured listen port fails, fall back
+	to a port chosen by the operating system (bind to port 0). When
+	false, a failed bind is reported as an error.
+	"""
+	listenSystemPortFallback: Boolean!
+	"""
+	Starts or stops the UPnP service. While running, the listen port
+	and the DHT port are forwarded on local UPnP-capable routers.
+	"""
+	enableUpnp: Boolean!
+	"""
+	Starts or stops the NAT-PMP service. While running, the listen
+	port and the DHT port are forwarded on the router via NAT-PMP.
+	"""
+	enableNatpmp: Boolean!
+	"""
+	Starts or stops Local Service Discovery, which broadcasts the
+	info-hashes of all non-private torrents to the local network to
+	find peers within multicast reach.
+	"""
+	enableLsd: Boolean!
+	"""
+	Starts or stops the DHT node, which provides trackerless peer
+	discovery.
+	"""
+	enableDht: Boolean!
+	"""
+	When true, torrents with a very high availability of pieces (and
+	seeds) are downloaded sequentially, which is more efficient for
+	disk I/O; with many seeds the download order rarely matters
+	anyway.
+	"""
+	autoSequential: Boolean!
+	"""
+	Starts or stops the OS route-change notifier, which reacts to
+	changes of the host's network configuration. Recommended on;
+	disable it only if it is unreliable on the platform, and then
+	call the `reopenNetworkSockets` mutation manually after network
+	changes.
+	"""
+	enableIpNotifier: Boolean!
+	"""
+	When true, DHT nodes whose IDs are correctly derived from their
+	source IP per BEP 42 are preferred in the routing table.
+	"""
+	dhtPreferVerifiedNodeIds: Boolean!
+	"""
+	Restricts DHT routing-table entries to one per IP, and rejects
+	nodes within a close CIDR distance (/24 for IPv4, /64 for IPv6)
+	of an existing entry in the same bucket. Defaults to true;
+	mitigates node-ID spoofing and related DHT attacks.
+	"""
+	dhtRestrictRoutingIps: Boolean!
+	"""
+	Prevents DHT searches from adding nodes with IPs within a very
+	close CIDR distance of nodes already in the search. Defaults to
+	true; mitigates certain DHT attacks.
+	"""
+	dhtRestrictSearchIps: Boolean!
+	"""
+	Sizes the first DHT routing-table buckets at 128, 64, 32, and 16
+	nodes respectively, instead of the standard 8. All other buckets
+	keep size 8.
+	"""
+	dhtExtendedRoutingTable: Boolean!
+	"""
+	Keeps the full branch factor of outstanding requests to the
+	closest nodes throughout a DHT lookup, querying closer nodes as
+	soon as they are learned. Lowers lookup times at the cost of more
+	outstanding queries.
+	"""
+	dhtAggressiveLookups: Boolean!
+	"""
+	When true, DHT lookups are performed in a slightly more expensive
+	way that minimizes the amount of information leaked about this
+	node.
+	"""
+	dhtPrivacyLookups: Boolean!
+	"""
+	Ignores DHT nodes whose ID is not correctly derived from their
+	external IP (BEP 42). Queries from such nodes are answered with
+	an "invalid node ID" error message.
+	"""
+	dhtEnforceNodeId: Boolean!
+	"""
+	Ignores DHT messages from parts of the address space no traffic
+	is expected from.
+	"""
+	dhtIgnoreDarkInternet: Boolean!
+	"""
+	Puts the DHT node in read-only mode: it stops answering queries
+	and marks its outgoing queries (a `ro` key) so other nodes do not
+	add it to their routing tables. Meant for low-power, ephemeral,
+	or traffic- and battery-sensitive devices.
+	"""
+	dhtReadOnly: Boolean!
+	"""
+	When true, the piece picker develops an affinity for 4 MiB
+	extents of adjacent pieces, improving disk I/O throughput for
+	torrents with small piece sizes.
+	"""
+	pieceExtentAffinity: Boolean!
+	"""
+	Whether the TLS certificates of HTTPS trackers and HTTPS web
+	seeds are validated against the system certificate store (as
+	defined by OpenSSL/GnuTLS). May have to be disabled on systems
+	without a certificate store for such trackers and web seeds to
+	work.
+	"""
+	validateHttpsTrackers: Boolean!
+	"""
+	Restricts tracker and web-seed requests that reach the local
+	network (SSRF mitigation). HTTP(S) tracker requests to loopback
+	must have a request path starting with `/announce` (the
+	conventional tracker path) — including after redirects. Web
+	seeds that resolve to private address ranges may not carry query
+	strings (including after redirects), and web seeds on global IPs
+	may not redirect to local-network addresses.
+	"""
+	ssrfMitigation: Boolean!
+	"""
+	Whether trackers and web seeds with internationalized (IDNA)
+	hostnames are used. When disabled they are ignored, as a
+	precaution against unicode-encoding attacks at the application
+	level.
+	"""
+	allowIdna: Boolean!
+	"""
+	Linux only: set the no-copy-on-write flag (`FS_NOCOW_FL`) on
+	downloaded files. This mitigates heavy fragmentation on
+	copy-on-write filesystems such as btrfs, but also disables
+	checksumming and compression for those files and restricts
+	reflinks (a NOCOW file can only be reflinked into NOCOW
+	directories), so it is disabled by default. Alternatively, set
+	the NOCOW flag on the download directory itself: files created
+	inside it inherit the flag.
+	"""
+	diskDisableCopyOnWrite: Boolean!
+	"""
+	Whether to accept multiple connections carrying the same peer ID.
+	Normally only one connection per peer is kept; for a peer with
+	several IP addresses this can improve transfer efficiency, at the
+	cost of extra network load.
+	"""
+	allowMultipleConnectionsPerPid: Boolean!
+	"""
+	Seconds from sending a tracker request until the whole exchange
+	is considered timed out.
+	"""
+	trackerCompletionTimeout: Int!
+	"""
+	Seconds without receiving any data from a tracker before the
+	request is considered timed out. This is the timeout that
+	triggers when a tracker is down.
+	"""
+	trackerReceiveTimeout: Int!
+	"""
+	Seconds to wait for the `stopped` announce when shutting a
+	torrent down; kept short so the client can quit quickly. 0
+	suppresses `stopped` announces entirely.
+	"""
+	stopTrackerTimeout: Int!
+	"""
+	Seconds from requesting a piece until the request times out when
+	no part of the piece has been received.
+	"""
+	pieceTimeout: Int!
+	"""
+	Seconds within which one requested 16 KiB block is expected to
+	arrive; after that the block is requested from a different peer.
+	"""
+	requestTimeout: Int!
+	"""
+	Length of the per-peer request queue, expressed as the number of
+	seconds the queued requests should take the peer to send at its
+	current rate — so the actual number of outstanding requests
+	scales with the download rate.
+	"""
+	requestQueueTime: Int!
+	"""
+	Number of outstanding block requests a peer may queue up in the
+	client; requests beyond this are dropped. Higher values let a
+	single peer reach faster upload speeds.
+	"""
+	maxAllowedInRequestQueue: Int!
+	"""
+	Maximum number of outstanding block requests to send to a peer.
+	Takes precedence over `requestQueueTime`: the queue never exceeds
+	this, regardless of download rate.
+	"""
+	maxOutRequestQueue: Int!
+	"""
+	If a whole piece can be downloaded from a peer within this many
+	seconds, prefer requesting whole pieces from it. Localized
+	accesses use disk caches better, and bad peers are easier to
+	identify when a piece fails its hash check.
+	"""
+	wholePiecesThreshold: Int!
+	"""
+	Seconds without any activity on a peer connection before it is
+	closed as timed out. The protocol specifies 120 seconds; a
+	keep-alive message is sent after half the timeout.
+	"""
+	peerTimeout: Int!
+	"""
+	Like `peerTimeout`, but for web seeds; usually lower, because web
+	servers are expected to be more reliable.
+	"""
+	urlseedTimeout: Int!
+	"""
+	Seconds to wait before retrying a web seed, when the server does
+	not provide a valid `retry-after` header.
+	"""
+	urlseedWaitRetry: Int!
+	"""
+	Upper limit on the number of files the session keeps open.
+	Deferring file closes matters on systems where anti-virus
+	software scans every closed file, and operating systems cap open
+	file descriptors per process.
+	"""
+	filePoolSize: Int!
+	"""
+	Maximum failed connection attempts to a peer before giving up on
+	it. A successful connection resets the counter; rediscovering the
+	peer from a source other than the DHT decrements it by one,
+	allowing another try.
+	"""
+	maxFailcount: Int!
+	"""
+	Base number of seconds to wait before reconnecting to a peer,
+	multiplied by the peer's failure count.
+	"""
+	minReconnectTime: Int!
+	"""
+	Seconds from initiating a peer connection attempt until it is
+	considered timed out. Especially important when half-open
+	connections are limited, since stale half-open connections delay
+	other peers considerably.
+	"""
+	peerConnectTimeout: Int!
+	"""
+	Outgoing connection attempts per second. 0 disables outgoing
+	connections entirely; a negative value falls back to 200 per
+	second.
+	"""
+	connectionSpeed: Int!
+	"""
+	Seconds a mutually uninterested and uninteresting peer connection
+	is kept before it is disconnected.
+	"""
+	inactivityTimeout: Int!
+	"""
+	Seconds between choke/unchoke rounds, when peers are re-evaluated
+	for choking. The protocol defines 30 seconds; it should be well
+	above the time TCP needs to ramp up to its maximum rate.
+	"""
+	unchokeInterval: Int!
+	"""
+	Seconds between optimistic unchokes; on this timer, the
+	optimistically unchoked peer is rotated.
+	"""
+	optimisticUnchokeInterval: Int!
+	"""
+	Number of peers to ask for in each tracker request (the
+	`&num_want=` announce parameter).
+	"""
+	numWant: Int!
+	"""
+	Number of pieces to download before switching from random to
+	rarest-first piece picking: the first this-many pieces of any
+	torrent are picked at random.
+	"""
+	initialPickerThreshold: Int!
+	"""
+	Number of allowed-fast pieces to grant peers that support the
+	fast extension.
+	"""
+	allowedFastSetSize: Int!
+	"""
+	Maximum number of bytes waiting in the disk write queue. When the
+	queue is full, peer connections stop reading from their sockets
+	until the disk thread catches up. Setting this too low severely
+	limits the download rate.
+	"""
+	maxQueuedDiskBytes: Int!
+	"""
+	Seconds to wait for a peer's handshake response; peers that do
+	not respond in time are disconnected.
+	"""
+	handshakeTimeout: Int!
+	"""
+	Minimum send-buffer target size in bytes (the send buffer
+	includes bytes pending being read from disk). Effectively the
+	initial window size that determines how fast the send rate can
+	ramp up; for good, snappy seeding performance, set it high enough
+	to fit at least a few blocks.
+	"""
+	sendBufferLowWatermark: Int!
+	"""
+	Upper limit of the send-buffer watermark in bytes: whenever a
+	send buffer holds fewer bytes than its current watermark, another
+	16 KiB block is read from disk onto it. Too small hurts upload
+	capacity; too large wastes memory. The effective watermark is
+	lower when the upload rate to the peer is low — see
+	`sendBufferWatermarkFactor`.
+	"""
+	sendBufferWatermark: Int!
+	"""
+	Percentage multiplied by the current upload rate to a peer to
+	derive that peer's send-buffer watermark (50 means 0.5× the
+	rate), clamped to at most `sendBufferWatermark`. Values above 100
+	can improve upload performance and disk throughput on
+	high-capacity connections; too high wastes RAM and biases disk
+	work toward read jobs over write jobs.
+	"""
+	sendBufferWatermarkFactor: Int!
+	"""
+	DSCP code point (0-63) set in the IP header of every packet sent
+	to peers (including web seeds). 0 means no marking; 1 is Lower
+	Effort. See RFC 8622 and IANA's DSCP registry for other values.
+	"""
+	peerDscp: Int!
+	"""
+	Maximum number of auto-managed torrents allowed to actively
+	download at once; the rest are queued (paused by
+	auto-management). -1 means unlimited. The overall target of
+	active torrents is min(`activeDownloads` + `activeSeeds`,
+	`activeLimit`); torrents that are not auto-managed do not count
+	against these limits.
+	"""
+	activeDownloads: Int!
+	"""
+	Maximum number of auto-managed torrents allowed to actively seed
+	at once; the rest are queued (paused by auto-management). -1
+	means unlimited. The overall target of active torrents is
+	min(`activeDownloads` + `activeSeeds`, `activeLimit`); torrents
+	that are not auto-managed do not count against these limits.
+	"""
+	activeSeeds: Int!
+	"""
+	Maximum number of torrents checking files simultaneously. -1
+	means unlimited.
+	"""
+	activeChecking: Int!
+	"""
+	Maximum number of auto-managed torrents announced to the DHT. -1
+	means unlimited. Torrents beyond the limit stay active without
+	being announced: a peer that knows about a torrent can still
+	connect, unless the torrent is paused.
+	"""
+	activeDhtLimit: Int!
+	"""
+	Maximum number of auto-managed torrents announced to their
+	trackers. -1 means unlimited. Torrents beyond the limit stay
+	active without being announced: a peer that knows about a torrent
+	can still connect, unless the torrent is paused.
+	"""
+	activeTrackerLimit: Int!
+	"""
+	Maximum number of auto-managed torrents announced over Local
+	Service Discovery. -1 means unlimited. Torrents beyond the limit
+	stay active without being announced: a peer that knows about a
+	torrent can still connect, unless the torrent is paused.
+	"""
+	activeLsdLimit: Int!
+	"""
+	Hard cap on the number of active auto-managed torrents; also
+	applies to slow torrents. -1 means unlimited. See
+	`activeDownloads` and `activeSeeds` for how the active set is
+	divided.
+	"""
+	activeLimit: Int!
+	"""
+	Seconds between updates (and rotations) of the auto-managed
+	torrent queue.
+	"""
+	autoManageInterval: Int!
+	"""
+	Seconds a torrent may be an active seed before it is considered
+	to have met its seeding goal and yields queue priority to other
+	torrents (it may still seed, just without priority). See also
+	`shareRatioLimit` and `seedTimeRatioLimit`.
+	"""
+	seedTimeLimit: Int!
+	"""
+	Seconds between automatic scrapes of queued torrents (paused,
+	auto-managed ones). Their downloader/seed ratios are tracked to
+	decide which torrents to seed and which to pause.
+	"""
+	autoScrapeInterval: Int!
+	"""
+	Minimum seconds between any two automatic scrapes regardless of
+	torrent, bounding scrape traffic when many auto-managed torrents
+	are paused.
+	"""
+	autoScrapeMinInterval: Int!
+	"""
+	Maximum number of known peers kept per torrent. Known peers are
+	not necessarily connected, so this should be much larger than the
+	connection limit. Eviction starts when the list passes 90% of the
+	limit; at the limit, no more peers are added. 0 means unlimited.
+	"""
+	maxPeerlistSize: Int!
+	"""
+	Like `maxPeerlistSize`, but for paused torrents, where a large
+	peer list matters less; a lower value saves memory.
+	"""
+	maxPausedPeerlistSize: Int!
+	"""
+	Minimum announce interval in seconds accepted from a tracker
+	response — a sanity check that avoids hammering misconfigured
+	trackers.
+	"""
+	minAnnounceInterval: Int!
+	"""
+	Seconds a newly started torrent is considered active regardless
+	of transfer rates, giving it a fair chance to start before the
+	`dontCountSlowTorrents` logic can classify it as inactive.
+	"""
+	autoManageStartup: Int!
+	"""
+	Number of pieces to send a peer while seeding before rotating
+	another peer into the unchoke set.
+	"""
+	seedingPieceQuota: Int!
+	"""
+	Receive buffer size (`SO_RCVBUF`) set on peer sockets, in bytes;
+	0 keeps the OS default. Note that all uTP peers of a listen
+	socket share one UDP socket buffer, along with DHT and UDP
+	tracker traffic; a buffer too small for the combined traffic
+	drops packets.
+	"""
+	recvSocketBufferSize: Int!
+	"""
+	Send buffer size (`SO_SNDBUF`) set on peer sockets, in bytes; 0
+	keeps the OS default. Note that all uTP peers of a listen socket
+	share one UDP socket buffer, along with DHT and UDP tracker
+	traffic; a buffer too small for the combined traffic drops
+	packets.
+	"""
+	sendSocketBufferSize: Int!
+	"""
+	Best-effort cap in bytes on a single peer connection's receive
+	buffer: growth stops here, but the buffer always accommodates
+	the current message, so one large legal message (up to about
+	1 MiB) can exceed the cap.
+	"""
+	maxPeerRecvBufferSize: Int!
+	"""
+	Seconds after a disk write error before an auto-managed torrent
+	is taken out of upload mode again, to test whether the error
+	condition has been fixed. Only auto-managed torrents leave upload
+	mode automatically; clear the `UPLOAD_MODE` torrent flag to leave
+	it explicitly.
+	"""
+	optimisticDiskRetry: Int!
+	"""
+	Maximum suggested piece indexes remembered per peer, bounding
+	memory use when a peer floods `suggest` messages.
+	"""
+	maxSuggestPieces: Int!
+	"""
+	Seconds between Local Service Discovery announces of a torrent.
+	"""
+	localServiceAnnounceInterval: Int!
+	"""
+	Seconds between DHT announces of a torrent.
+	"""
+	dhtAnnounceInterval: Int!
+	"""
+	Seconds to keep UDP tracker connection tokens around; the
+	protocol specifies 60. Higher values need fewer packets, but
+	require the tracker to be configured with a matching expiry.
+	"""
+	udpTrackerTokenExpiry: Int!
+	"""
+	Number of optimistic unchoke slots. More slots find good peers
+	faster but use more bandwidth. 0 means automatic: 20% of the
+	allowed upload slots.
+	"""
+	numOptimisticUnchokeSlots: Int!
+	"""
+	Maximum peers accepted from a single peer's PEX message — a cap
+	on how many concurrent peers any one peer may claim to be
+	connected to. Entries beyond the limit are ignored.
+	"""
+	maxPexPeers: Int!
+	"""
+	Milliseconds between internal ticks — the frequency at which
+	bandwidth quota is distributed to peers; at most 1000. A low
+	value (around 100) gives finer-grained rate limiting; a higher
+	value saves CPU cycles.
+	
+	A negative value removes the once-per-second gate on the heavier
+	per-torrent work (the timer itself still fires every
+	millisecond). That is intended for tests and fuzzing that need
+	the session to react instantly; do not use it in production.
+	"""
+	tickInterval: Int!
+	"""
+	Target share ratio for share-mode torrents: at 3, the client
+	tries to upload three times as much as it downloads. Values below
+	2 make no sense, and too-high values are so conservative that
+	nothing may be downloaded at all — a piece can only be uploaded
+	as many times as there are peers who still need it.
+	"""
+	shareModeTarget: Int!
+	"""
+	Session-global upload rate limit in bytes per second. 0 means
+	unlimited. Peers on the local network are not rate limited by
+	default.
+	"""
+	uploadRateLimit: Int!
+	"""
+	Session-global download rate limit in bytes per second. 0 means
+	unlimited. Peers on the local network are not rate limited by
+	default.
+	"""
+	downloadRateLimit: Int!
+	"""
+	Average bytes per second the DHT node is allowed to send. When
+	incoming requests would exceed the quota with their responses,
+	requests are dropped until the quota is replenished.
+	"""
+	dhtUploadRateLimit: Int!
+	"""
+	Maximum number of unchoked peers in the session when
+	`chokingAlgorithm` is `FIXED_SLOTS`. -1 means unlimited: all
+	peers are always unchoked.
+	"""
+	unchokeSlotsLimit: Int!
+	"""
+	Global limit on the number of open peer connections. A hard
+	minimum of two connections per torrent still applies, so enough
+	torrents can exceed a low limit.
+	"""
+	connectionsLimit: Int!
+	"""
+	Number of incoming connections accepted beyond
+	`connectionsLimit`, as candidates that may replace existing
+	connections.
+	"""
+	connectionsSlack: Int!
+	"""
+	Target one-way delay for uTP sockets, in milliseconds. Higher
+	values are more aggressive and queue more at the upload
+	bottleneck; too-low values drown in measurement noise and send
+	too slowly.
+	"""
+	utpTargetDelay: Int!
+	"""
+	Maximum bytes the uTP congestion window may grow within one
+	round-trip time. Too high, and the controller overreacts to noise
+	and becomes unstable; too low, and it reacts slowly to congestion
+	(and backs off slowly).
+	"""
+	utpGainFactor: Int!
+	"""
+	Shortest allowed uTP socket timeout, in milliseconds. The actual
+	timeout scales with the connection's round-trip time but never
+	goes below this value. A connection times out when a whole window
+	is lost, or one packet is lost twice in a row; a shorter timeout
+	recovers faster, provided the round-trip time is low enough.
+	"""
+	utpMinTimeout: Int!
+	"""
+	Number of SYN packets sent — each timing out — before giving up
+	and closing a uTP socket.
+	"""
+	utpSynResends: Int!
+	"""
+	Number of FIN packets sent — each timing out — before giving up
+	and closing a uTP socket.
+	"""
+	utpFinResends: Int!
+	"""
+	Number of times one packet is resent (lost or timed out) before
+	the uTP connection is considered broken and closed.
+	"""
+	utpNumResends: Int!
+	"""
+	Timeout in milliseconds for the initial uTP SYN packet; each
+	consecutive timeout doubles it.
+	"""
+	utpConnectTimeout: Int!
+	"""
+	Percentage applied to the uTP congestion window when a packet
+	loss is experienced. Do not change this unless you know what you
+	are doing, and never set it above 100.
+	"""
+	utpLossMultiplier: Int!
+	"""
+	Backlog passed to `listen()` on listen sockets: the number of
+	pending incoming connections queued while not actively accepting.
+	5 is sufficient for a normal client; raise it for
+	high-performance servers expecting many connections. Takes effect
+	the next time `listenInterfaces` is updated.
+	"""
+	listenQueueSize: Int!
+	"""
+	Number of peers to connect immediately when the first tracker
+	response for a torrent arrives, instead of waiting for the
+	once-per-second connect scheduler — a boost that accelerates new
+	torrents. At most 255.
+	"""
+	torrentConnectBoost: Int!
+	"""
+	Maximum size in bytes of metadata (.torrent contents) accepted
+	via the metadata extension, i.e. from magnet links.
+	"""
+	maxMetadataSize: Int!
+	"""
+	Number of disk I/O threads used for piece-hash verification
+	during full torrent checking, in addition to the regular
+	`aioThreads` (hash checks during normal download use the regular
+	threads). Hasher threads also perform the disk reads; on storage
+	optimized for sequential access, such as hard drives, 1 (the
+	default) is best.
+	"""
+	hashingThreads: Int!
+	"""
+	Number of 16 KiB blocks kept outstanding while checking torrents.
+	Higher values give faster rechecks but use more memory.
+	"""
+	checkingMemUsage: Int!
+	"""
+	When above 0, pieces are announced to peers this many
+	milliseconds before they are expected to finish downloading — and
+	before they are hash-checked — to gain up to 1.5 round trips per
+	piece. 0 disables predictive announcing.
+	"""
+	predictivePieceAnnounce: Int!
+	"""
+	Number of disk I/O threads, for the asynchronous I/O back-ends
+	that use a thread pool.
+	"""
+	aioThreads: Int!
+	"""
+	How aggressively to back off from retrying failing trackers: the
+	wait before retry number `fails` is `5 + 5 × trackerBackoff / 100
+	× fails²` seconds.
+	"""
+	trackerBackoff: Int!
+	"""
+	Share ratio (uploaded/downloaded) as a percentage at which a
+	seeding torrent is considered done and yields queue priority to
+	other torrents (it may still seed, just without priority). See
+	also `seedTimeRatioLimit` and `seedTimeLimit`.
+	"""
+	shareRatioLimit: Int!
+	"""
+	Seed-time ratio (seconds as seed over seconds as downloader) as a
+	percentage at which a seeding torrent is considered done and
+	yields queue priority to other torrents (it may still seed, just
+	without priority). See also `shareRatioLimit` and
+	`seedTimeLimit`.
+	"""
+	seedTimeRatioLimit: Int!
+	"""
+	Percentage of a torrent's peers to disconnect in each turnover
+	round (every `peerTurnoverInterval` seconds), to make room for
+	trying other peers. Only applies while above the
+	`peerTurnoverCutoff` fill grade.
+	"""
+	peerTurnover: Int!
+	"""
+	Fill grade that triggers peer turnover, as a percentage of the
+	torrent's connection limit: `peerTurnover` disconnects only
+	happen while more peers than that are connected.
+	"""
+	peerTurnoverCutoff: Int!
+	"""
+	Seconds between peer-turnover rounds — the optimistic disconnects
+	governed by `peerTurnover` and `peerTurnoverCutoff`.
+	"""
+	peerTurnoverInterval: Int!
+	"""
+	Every n-th connection attempt is granted to a seeding or finished
+	torrent instead of a downloading one; this is n. Connection
+	attempts are a limited resource (`connectionSpeed`), and
+	downloading torrents are prioritized for them by default.
+	"""
+	connectSeedEveryNDownload: Int!
+	"""
+	Maximum size in bytes of an HTTP response accepted when
+	announcing to trackers or downloading .torrent files.
+	"""
+	maxHttpRecvBufferSize: Int!
+	"""
+	Number of times to retry binding a listen port that failed,
+	incrementing the port by one each try.
+	"""
+	maxRetryPortBind: Int!
+	"""
+	Download rate in bytes per second below which a torrent may count
+	as inactive for queuing: a torrent below both `inactiveDownRate`
+	and `inactiveUpRate` for `autoManageStartup` seconds is
+	considered inactive, and another queued torrent may start. Only
+	applies when `dontCountSlowTorrents` is true.
+	"""
+	inactiveDownRate: Int!
+	"""
+	Upload rate in bytes per second below which a torrent may count
+	as inactive for queuing; see `inactiveDownRate`.
+	"""
+	inactiveUpRate: Int!
+	"""
+	Maximum web-seed request range in bytes — the largest possible
+	single sequential request. Values below the piece size are
+	ignored. Relate it to the download speed to avoid creating too
+	many expensive HTTP requests per second, but note that a request
+	spanning the whole file precludes parallel requests, and that
+	combining web seeds with rarest-first BitTorrent downloading
+	splits requests around already-picked pieces.
+	"""
+	urlseedMaxRequestBytes: Int!
+	"""
+	Seconds to wait before retrying a failed web-seed hostname
+	lookup.
+	"""
+	webSeedNameLookupRetry: Int!
+	"""
+	Seconds between closing the file that has been open the longest,
+	nudging the operating system to flush its disk cache; observed to
+	be necessary on Windows to keep the cache bounded. 0 disables the
+	feature (the default everywhere except Windows, where it defaults
+	to 240).
+	"""
+	closeFileInterval: Int!
+	"""
+	Milliseconds after a uTP congestion-window reduction during which
+	further packet losses do not reduce the window again.
+	"""
+	utpCwndReduceTimer: Int!
+	"""
+	Maximum web-seed connections per torrent.
+	"""
+	maxWebSeedConnections: Int!
+	"""
+	Seconds a hostname stays in the internal DNS cache before it is
+	considered out of date and removed; negative values mean zero.
+	Failed lookups are cached too, for one eighth of this time.
+	"""
+	resolverCacheTimeout: Int!
+	"""
+	Not-sent low watermark for socket send buffers — the
+	Linux-specific `TCP_NOTSENT_LOWAT` TCP socket option.
+	"""
+	sendNotSentLowWatermark: Int!
+	"""
+	Starting threshold of the rate-based choker (`chokingAlgorithm:
+	RATE_BASED`): peers are visited in decreasing upload rate, the
+	threshold grows proportionally with each visited peer, and the
+	peers whose upload rate exceeds it are unchoked. A higher start
+	value yields fewer unchoke slots; a lower one, more.
+	"""
+	rateChokerInitialThreshold: Int!
+	"""
+	Requested expiration time of UPnP port mappings, in seconds; 0
+	requests a permanent lease. Some routers mishandle expiring
+	mappings without reporting an error — use 0 for those. Otherwise,
+	do not set it below 5 minutes.
+	"""
+	upnpLeaseDuration: Int!
+	"""
+	Maximum concurrent HTTP tracker announces; further announces are
+	queued and issued as outstanding ones complete.
+	"""
+	maxConcurrentHttpAnnounces: Int!
+	"""
+	Maximum number of peers sent in a reply to a DHT `get_peers`
+	query.
+	"""
+	dhtMaxPeersReply: Int!
+	"""
+	Number of concurrent search requests the DHT node sends when
+	announcing and refreshing the routing table — the `alpha`
+	parameter of the Kademlia paper.
+	"""
+	dhtSearchBranching: Int!
+	"""
+	Failed contact attempts before a DHT node is removed from the
+	routing table. Only relevant when no working replacement is
+	known; a failing node with a known replacement is replaced
+	immediately.
+	"""
+	dhtMaxFailCount: Int!
+	"""
+	Maximum torrents tracked by the DHT node — an upper bound that
+	keeps malicious nodes from forcing unbounded memory use.
+	"""
+	dhtMaxTorrents: Int!
+	"""
+	Maximum immutable/mutable items the DHT node stores.
+	"""
+	dhtMaxDhtItems: Int!
+	"""
+	Maximum peers the DHT node stores per torrent.
+	"""
+	dhtMaxPeers: Int!
+	"""
+	Seconds a remote DHT node stays banned after exceeding the rate
+	limit. The rate limit (`dhtBlockRatelimit`) is averaged over 10
+	seconds to allow bursts.
+	"""
+	dhtBlockTimeout: Int!
+	"""
+	Maximum packets per second a remote DHT node may send before it
+	is banned (see `dhtBlockTimeout`).
+	"""
+	dhtBlockRatelimit: Int!
+	"""
+	Seconds until a stored immutable/mutable DHT item expires. 0 (the
+	default) means it never expires.
+	"""
+	dhtItemLifetime: Int!
+	"""
+	Seconds between recomputations of the DHT info-hash sample: the
+	node precomputes a subset of its tracked info-hashes and serves
+	that instead of recomputing per request. Valid range 0..=21600.
+	"""
+	dhtSampleInfohashesInterval: Int!
+	"""
+	Maximum elements in the sampled info-hash subset. Very large
+	values may be clamped by the DHT storage so replies still fit in
+	UDP packets.
+	"""
+	dhtMaxInfohashesSampleCount: Int!
+	"""
+	Maximum number of pieces allowed in metadata received via magnet
+	links.
+	"""
+	maxPieceCount: Int!
+	"""
+	Maximum bencoded tokens parsed from metadata (.torrent contents)
+	received from peers — a denial-of-service guard that may need
+	raising for very large torrents.
+	"""
+	metadataTokenLimit: Int!
+	"""
+	With the mmap disk I/O backend, files smaller than this many 16
+	KiB blocks are not memory-mapped but accessed with plain
+	pread/pwrite.
+	"""
+	mmapFileSizeCutoff: Int!
+	"""
+	Port reported to trackers and the DHT as the `port` announce
+	parameter, without affecting the actual listen port or Local
+	Service Discovery. 0 (the default) reports the real listening
+	port.
+	
+	Only for special setups where the externally reachable port
+	differs from the local one — for example, a local proxy providing
+	a reverse tunnel through NAT-PMP, where peers must connect to the
+	external NAT-PMP port.
+	"""
+	announcePort: Int!
+	"""
+	Requested lifetime of NAT-PMP and PCP port mappings, in seconds.
+	"""
+	natpmpLeaseDuration: Int!
+	"""
+	The user agent identity presented to trackers and in web-seed
+	requests. The peer-ID prefix is controlled separately by
+	`peerFingerprint`.
+	
+	`UNRECOGNIZED` reports an effective value set outside this API
+	(e.g. state persisted by a different daemon version); it cannot
+	be written back.
+	"""
+	userAgent: UserAgent!
+	"""
+	Proxy for outgoing connections. `null` = no proxy configured.
+	"""
+	proxy: ProxySettings
+	"""
+	I2P SAM bridge configuration. `null` = I2P disabled.
+	"""
+	i2p: I2pSettings
+	"""
+	BitTorrent protocol encryption policy.
+	"""
+	encryption: EncryptionSettings!
+	"""
+	Which peer transport protocols are enabled, per direction.
+	"""
+	peerTransports: PeerTransports!
+	"""
+	Source-port range bound for outgoing peer connections.
+	`null` = OS-selected ephemeral ports.
+	"""
+	outgoingPortRange: PortRange
+	"""
+	OS cache behavior of disk reads and writes.
+	"""
+	diskIoCache: DiskIoCache!
+	"""
+	How to flush pieces to disk with the mmap disk I/O backend.
+	"""
+	mmapWriteMode: MmapWriteMode!
+	"""
+	Whether to send `suggest` messages to peers.
+	"""
+	suggestMode: SuggestMode!
+	"""
+	Which algorithm chooses peers to unchoke.
+	"""
+	chokingAlgorithm: ChokingAlgorithm!
+	"""
+	Which algorithm chooses peers to unchoke while seeding.
+	"""
+	seedChokingAlgorithm: SeedChokingAlgorithm!
+	"""
+	How rate limits are divided between TCP and uTP peers when both
+	transports are in use.
+	"""
+	mixedModeAlgorithm: MixedModeAlgorithm!
+	"""
+	IP addresses or network device names outgoing peer connections
+	bind to, round-robin (no hostnames; IPv6 goes unbracketed).
+	Side effect: while non-empty, incoming connections and packets
+	arriving on a local interface or IP *not* in this list are
+	rejected. Empty = let the OS route.
+	"""
+	outgoingInterfaces: [String!]!
+	"""
+	Endpoints for incoming uTP and TCP peer connections, also used
+	for *outgoing* uTP, UDP tracker, and DHT traffic. Applying a
+	change closes and reopens the listen sockets. An empty list
+	disables networking: no DHT, no incoming connections, no
+	outgoing uTP or tracker traffic (outgoing TCP still works,
+	subject to `outgoingInterfaces`).
+	"""
+	listenInterfaces: [ListenInterface!]!
+	"""
+	DHT bootstrap nodes.
+	"""
+	dhtBootstrapNodes: [HostPort!]!
+}
+
+"""
+A settings delta for `applySettings`.
+
+Omitted fields are left unchanged. `null` disables the nullable
+groups (`proxy`, `i2p`, `outgoingPortRange`) by resetting their
+backing settings to built-in defaults; on any other field an
+explicit `null` is an error.
+"""
+input SettingsInput {
+	"""
+	The IP address to pass to trackers as the `&ip=` announce
+	parameter. Empty (the default) omits the parameter.
+	
+	Only useful in the special case where the seed runs on the same
+	host as the tracker and the tracker honors the parameter (normal
+	trackers do not). Do not set it unless you also control the
+	tracker.
+	"""
+	announceIp: String
+	"""
+	The client name and version identifier sent to peers in the
+	extension handshake. Empty (the default) sends the `userAgent`
+	identity instead. Must be valid UTF-8.
+	"""
+	handshakeClientVersion: String
+	"""
+	The fingerprint prefix of the peer ID sent to peers,
+	conventionally encoding the client name and version (e.g.
+	`-qB5050-`). A value of 20 bytes or longer is truncated to 20
+	bytes and used as the entire peer ID.
+	"""
+	peerFingerprint: String
+	"""
+	Overrides the gateway address used by the NAT-PMP service. When
+	empty (the default), the default gateway is discovered
+	automatically. Only read when NAT-PMP starts: to change it while
+	NAT-PMP is running, disable and re-enable `enableNatpmp`.
+	"""
+	natpmpGateway: String
+	"""
+	Whether to accept multiple peer connections from the same IP
+	address. Rejecting them (the default) prevents abusive behavior,
+	and the logic that identifies duplicate peers is more reliable
+	that way; enabling this is not recommended.
+	"""
+	allowMultipleConnectionsPerIp: Boolean
+	"""
+	Whether to send `have` messages to peers that already have the
+	piece. Typically unnecessary, but occasionally useful for peers
+	that collect statistics.
+	"""
+	sendRedundantHave: Boolean
+	"""
+	When true, the DHT is only used for torrents whose trackers have
+	all failed (by explicit error or timeout). When false, the DHT is
+	used regardless of tracker state.
+	"""
+	useDhtAsFallback: Boolean
+	"""
+	Whether the UPnP service ignores broadcast responses from devices
+	outside the local subnet — a way to avoid talking to other
+	people's routers by mistake.
+	"""
+	upnpIgnoreNonrouters: Boolean
+	"""
+	Whether to use parole mode: a peer that participated in a piece
+	that failed its hash check may only download whole pieces. If a
+	whole piece downloaded from a peer on parole fails its hash
+	check, that peer is banned; a passing piece releases it from
+	parole.
+	"""
+	useParoleMode: Boolean
+	"""
+	When true, auto-management prefers seeding torrents when handing
+	out active slots; when false, downloading torrents are preferred.
+	"""
+	autoManagePreferSeeds: Boolean
+	"""
+	When true, torrents without any payload transfer are not counted
+	against the `activeSeeds` and `activeDownloads` limits, so idle
+	torrents do not occupy active slots and available bandwidth is
+	more likely to be used. `inactiveDownRate`, `inactiveUpRate`, and
+	`autoManageStartup` control what counts as inactive.
+	"""
+	dontCountSlowTorrents: Boolean
+	"""
+	Whether to close connections that no longer serve a purpose for
+	either end, for instance between two peers that have both
+	completed their downloads.
+	"""
+	closeRedundantConnections: Boolean
+	"""
+	When true, partially downloaded pieces are picked before rarer
+	pieces. When false, rare pieces always win unless the number of
+	partial pieces grows out of proportion.
+	"""
+	prioritizePartialPieces: Boolean
+	"""
+	When true, estimated TCP/IP overhead is drained from the rate
+	limiters, so total traffic stays within the configured limits.
+	"""
+	rateLimitIpOverhead: Boolean
+	"""
+	When true, one tracker from every tier is announced to (the
+	uTorrent behavior). When false, announcing follows the
+	multi-tracker specification and stops at the first responding
+	tier. See also `announceToAllTrackers`.
+	"""
+	announceToAllTiers: Boolean
+	"""
+	When true, all trackers within a tier are announced to in
+	parallel; if every tracker in tier 0 fails, all of tier 1 is
+	announced too. When false, announcing follows the multi-tracker
+	specification, trying one tracker at a time within a tier. See
+	also `announceToAllTiers`.
+	"""
+	announceToAllTrackers: Boolean
+	"""
+	When true, trackers may be reordered so that a UDP tracker is
+	tried before HTTP trackers of the same hostname. When false,
+	tracker tiers are respected with no protocol preference.
+	"""
+	preferUdpTrackers: Boolean
+	"""
+	Linux only: open files with `O_NOATIME`, which can improve disk
+	performance by skipping access-time updates.
+	"""
+	noAtimeStorage: Boolean
+	"""
+	Whether an incoming peer connection may start a torrent that
+	auto-management has paused (queued). Queued torrents normally
+	stay stopped to save announce overhead and unchoke slots, but a
+	peer that still finds us can be served when this is enabled.
+	"""
+	incomingStartsQueuedTorrents: Boolean
+	"""
+	When true, the downloaded counter sent to trackers includes
+	redundant payload bytes; when false, redundancy is excluded.
+	"""
+	reportTrueDownloaded: Boolean
+	"""
+	Controls when a block may be requested from a second peer. When
+	true, a block is only requested twice once every piece left to
+	download already has an outstanding request; this avoids
+	redundant downloads at some cost in progress. When false, every
+	peer connection is kept busy even if that duplicates requests
+	already outstanding elsewhere.
+	"""
+	strictEndGameMode: Boolean
+	"""
+	What to do when resume data is missing or incomplete: true skips
+	checking existing files and goes straight to downloading
+	(assuming none of the data is present); false checks whatever is
+	already on disk.
+	"""
+	noRecheckIncompleteResume: Boolean
+	"""
+	When true, the client tries to hide its identity to a certain
+	degree: a generic user agent is sent to trackers (except for
+	private torrents), the local IPv4/IPv6 addresses are not sent to
+	private trackers as query parameters, a configured `announceIp`
+	is not sent, and the client version is not sent to peers in the
+	extension handshake.
+	"""
+	anonymousMode: Boolean
+	"""
+	Whether data downloaded from web seeds is reported to the
+	tracker. Disabling this also excludes web-seed traffic from
+	other transfer statistics and rate reporting.
+	"""
+	reportWebSeedDownloads: Boolean
+	"""
+	Whether seeding (and finished) torrents make outgoing peer
+	connections. Disabling this only makes sense in very specific
+	setups where outgoing connections are expensive and every peer is
+	reachable without them (no firewalls or NATs).
+	"""
+	seedingOutgoingConnections: Boolean
+	"""
+	When true, no outgoing connections are attempted to peers on
+	ports below 1024 — a precaution against being used as part of a
+	DDoS attack.
+	"""
+	noConnectPrivilegedPorts: Boolean
+	"""
+	When true, connection attempts per second may be throttled below
+	`connectionSpeed` when close to the connection limit, spreading
+	attempts evenly over time instead of connecting — and timing out
+	— in batches.
+	"""
+	smoothConnects: Boolean
+	"""
+	When true, every web-seed request carries the user agent; when
+	false, only the first request per HTTP connection does.
+	"""
+	alwaysSendUserAgent: Boolean
+	"""
+	Whether the session IP filter also applies to trackers, not just
+	peers. Irrelevant when no IP filter is set.
+	"""
+	applyIpFilterToTrackers: Boolean
+	"""
+	Whether web seeds that send bad data are banned.
+	"""
+	banWebSeeds: Boolean
+	"""
+	When false, share-mode support (the `SHARE_MODE` torrent flag) is
+	not advertised to peers.
+	"""
+	supportShareMode: Boolean
+	"""
+	Whether the number of redundant bytes downloaded is reported to
+	the tracker.
+	"""
+	reportRedundantBytes: Boolean
+	"""
+	When true, if binding the configured listen port fails, fall back
+	to a port chosen by the operating system (bind to port 0). When
+	false, a failed bind is reported as an error.
+	"""
+	listenSystemPortFallback: Boolean
+	"""
+	Starts or stops the UPnP service. While running, the listen port
+	and the DHT port are forwarded on local UPnP-capable routers.
+	"""
+	enableUpnp: Boolean
+	"""
+	Starts or stops the NAT-PMP service. While running, the listen
+	port and the DHT port are forwarded on the router via NAT-PMP.
+	"""
+	enableNatpmp: Boolean
+	"""
+	Starts or stops Local Service Discovery, which broadcasts the
+	info-hashes of all non-private torrents to the local network to
+	find peers within multicast reach.
+	"""
+	enableLsd: Boolean
+	"""
+	Starts or stops the DHT node, which provides trackerless peer
+	discovery.
+	"""
+	enableDht: Boolean
+	"""
+	When true, torrents with a very high availability of pieces (and
+	seeds) are downloaded sequentially, which is more efficient for
+	disk I/O; with many seeds the download order rarely matters
+	anyway.
+	"""
+	autoSequential: Boolean
+	"""
+	Starts or stops the OS route-change notifier, which reacts to
+	changes of the host's network configuration. Recommended on;
+	disable it only if it is unreliable on the platform, and then
+	call the `reopenNetworkSockets` mutation manually after network
+	changes.
+	"""
+	enableIpNotifier: Boolean
+	"""
+	When true, DHT nodes whose IDs are correctly derived from their
+	source IP per BEP 42 are preferred in the routing table.
+	"""
+	dhtPreferVerifiedNodeIds: Boolean
+	"""
+	Restricts DHT routing-table entries to one per IP, and rejects
+	nodes within a close CIDR distance (/24 for IPv4, /64 for IPv6)
+	of an existing entry in the same bucket. Defaults to true;
+	mitigates node-ID spoofing and related DHT attacks.
+	"""
+	dhtRestrictRoutingIps: Boolean
+	"""
+	Prevents DHT searches from adding nodes with IPs within a very
+	close CIDR distance of nodes already in the search. Defaults to
+	true; mitigates certain DHT attacks.
+	"""
+	dhtRestrictSearchIps: Boolean
+	"""
+	Sizes the first DHT routing-table buckets at 128, 64, 32, and 16
+	nodes respectively, instead of the standard 8. All other buckets
+	keep size 8.
+	"""
+	dhtExtendedRoutingTable: Boolean
+	"""
+	Keeps the full branch factor of outstanding requests to the
+	closest nodes throughout a DHT lookup, querying closer nodes as
+	soon as they are learned. Lowers lookup times at the cost of more
+	outstanding queries.
+	"""
+	dhtAggressiveLookups: Boolean
+	"""
+	When true, DHT lookups are performed in a slightly more expensive
+	way that minimizes the amount of information leaked about this
+	node.
+	"""
+	dhtPrivacyLookups: Boolean
+	"""
+	Ignores DHT nodes whose ID is not correctly derived from their
+	external IP (BEP 42). Queries from such nodes are answered with
+	an "invalid node ID" error message.
+	"""
+	dhtEnforceNodeId: Boolean
+	"""
+	Ignores DHT messages from parts of the address space no traffic
+	is expected from.
+	"""
+	dhtIgnoreDarkInternet: Boolean
+	"""
+	Puts the DHT node in read-only mode: it stops answering queries
+	and marks its outgoing queries (a `ro` key) so other nodes do not
+	add it to their routing tables. Meant for low-power, ephemeral,
+	or traffic- and battery-sensitive devices.
+	"""
+	dhtReadOnly: Boolean
+	"""
+	When true, the piece picker develops an affinity for 4 MiB
+	extents of adjacent pieces, improving disk I/O throughput for
+	torrents with small piece sizes.
+	"""
+	pieceExtentAffinity: Boolean
+	"""
+	Whether the TLS certificates of HTTPS trackers and HTTPS web
+	seeds are validated against the system certificate store (as
+	defined by OpenSSL/GnuTLS). May have to be disabled on systems
+	without a certificate store for such trackers and web seeds to
+	work.
+	"""
+	validateHttpsTrackers: Boolean
+	"""
+	Restricts tracker and web-seed requests that reach the local
+	network (SSRF mitigation). HTTP(S) tracker requests to loopback
+	must have a request path starting with `/announce` (the
+	conventional tracker path) — including after redirects. Web
+	seeds that resolve to private address ranges may not carry query
+	strings (including after redirects), and web seeds on global IPs
+	may not redirect to local-network addresses.
+	"""
+	ssrfMitigation: Boolean
+	"""
+	Whether trackers and web seeds with internationalized (IDNA)
+	hostnames are used. When disabled they are ignored, as a
+	precaution against unicode-encoding attacks at the application
+	level.
+	"""
+	allowIdna: Boolean
+	"""
+	Linux only: set the no-copy-on-write flag (`FS_NOCOW_FL`) on
+	downloaded files. This mitigates heavy fragmentation on
+	copy-on-write filesystems such as btrfs, but also disables
+	checksumming and compression for those files and restricts
+	reflinks (a NOCOW file can only be reflinked into NOCOW
+	directories), so it is disabled by default. Alternatively, set
+	the NOCOW flag on the download directory itself: files created
+	inside it inherit the flag.
+	"""
+	diskDisableCopyOnWrite: Boolean
+	"""
+	Whether to accept multiple connections carrying the same peer ID.
+	Normally only one connection per peer is kept; for a peer with
+	several IP addresses this can improve transfer efficiency, at the
+	cost of extra network load.
+	"""
+	allowMultipleConnectionsPerPid: Boolean
+	"""
+	Seconds from sending a tracker request until the whole exchange
+	is considered timed out.
+	"""
+	trackerCompletionTimeout: Int
+	"""
+	Seconds without receiving any data from a tracker before the
+	request is considered timed out. This is the timeout that
+	triggers when a tracker is down.
+	"""
+	trackerReceiveTimeout: Int
+	"""
+	Seconds to wait for the `stopped` announce when shutting a
+	torrent down; kept short so the client can quit quickly. 0
+	suppresses `stopped` announces entirely.
+	"""
+	stopTrackerTimeout: Int
+	"""
+	Seconds from requesting a piece until the request times out when
+	no part of the piece has been received.
+	"""
+	pieceTimeout: Int
+	"""
+	Seconds within which one requested 16 KiB block is expected to
+	arrive; after that the block is requested from a different peer.
+	"""
+	requestTimeout: Int
+	"""
+	Length of the per-peer request queue, expressed as the number of
+	seconds the queued requests should take the peer to send at its
+	current rate — so the actual number of outstanding requests
+	scales with the download rate.
+	"""
+	requestQueueTime: Int
+	"""
+	Number of outstanding block requests a peer may queue up in the
+	client; requests beyond this are dropped. Higher values let a
+	single peer reach faster upload speeds.
+	"""
+	maxAllowedInRequestQueue: Int
+	"""
+	Maximum number of outstanding block requests to send to a peer.
+	Takes precedence over `requestQueueTime`: the queue never exceeds
+	this, regardless of download rate.
+	"""
+	maxOutRequestQueue: Int
+	"""
+	If a whole piece can be downloaded from a peer within this many
+	seconds, prefer requesting whole pieces from it. Localized
+	accesses use disk caches better, and bad peers are easier to
+	identify when a piece fails its hash check.
+	"""
+	wholePiecesThreshold: Int
+	"""
+	Seconds without any activity on a peer connection before it is
+	closed as timed out. The protocol specifies 120 seconds; a
+	keep-alive message is sent after half the timeout.
+	"""
+	peerTimeout: Int
+	"""
+	Like `peerTimeout`, but for web seeds; usually lower, because web
+	servers are expected to be more reliable.
+	"""
+	urlseedTimeout: Int
+	"""
+	Seconds to wait before retrying a web seed, when the server does
+	not provide a valid `retry-after` header.
+	"""
+	urlseedWaitRetry: Int
+	"""
+	Upper limit on the number of files the session keeps open.
+	Deferring file closes matters on systems where anti-virus
+	software scans every closed file, and operating systems cap open
+	file descriptors per process.
+	"""
+	filePoolSize: Int
+	"""
+	Maximum failed connection attempts to a peer before giving up on
+	it. A successful connection resets the counter; rediscovering the
+	peer from a source other than the DHT decrements it by one,
+	allowing another try.
+	"""
+	maxFailcount: Int
+	"""
+	Base number of seconds to wait before reconnecting to a peer,
+	multiplied by the peer's failure count.
+	"""
+	minReconnectTime: Int
+	"""
+	Seconds from initiating a peer connection attempt until it is
+	considered timed out. Especially important when half-open
+	connections are limited, since stale half-open connections delay
+	other peers considerably.
+	"""
+	peerConnectTimeout: Int
+	"""
+	Outgoing connection attempts per second. 0 disables outgoing
+	connections entirely; a negative value falls back to 200 per
+	second.
+	"""
+	connectionSpeed: Int
+	"""
+	Seconds a mutually uninterested and uninteresting peer connection
+	is kept before it is disconnected.
+	"""
+	inactivityTimeout: Int
+	"""
+	Seconds between choke/unchoke rounds, when peers are re-evaluated
+	for choking. The protocol defines 30 seconds; it should be well
+	above the time TCP needs to ramp up to its maximum rate.
+	"""
+	unchokeInterval: Int
+	"""
+	Seconds between optimistic unchokes; on this timer, the
+	optimistically unchoked peer is rotated.
+	"""
+	optimisticUnchokeInterval: Int
+	"""
+	Number of peers to ask for in each tracker request (the
+	`&num_want=` announce parameter).
+	"""
+	numWant: Int
+	"""
+	Number of pieces to download before switching from random to
+	rarest-first piece picking: the first this-many pieces of any
+	torrent are picked at random.
+	"""
+	initialPickerThreshold: Int
+	"""
+	Number of allowed-fast pieces to grant peers that support the
+	fast extension.
+	"""
+	allowedFastSetSize: Int
+	"""
+	Maximum number of bytes waiting in the disk write queue. When the
+	queue is full, peer connections stop reading from their sockets
+	until the disk thread catches up. Setting this too low severely
+	limits the download rate.
+	"""
+	maxQueuedDiskBytes: Int
+	"""
+	Seconds to wait for a peer's handshake response; peers that do
+	not respond in time are disconnected.
+	"""
+	handshakeTimeout: Int
+	"""
+	Minimum send-buffer target size in bytes (the send buffer
+	includes bytes pending being read from disk). Effectively the
+	initial window size that determines how fast the send rate can
+	ramp up; for good, snappy seeding performance, set it high enough
+	to fit at least a few blocks.
+	"""
+	sendBufferLowWatermark: Int
+	"""
+	Upper limit of the send-buffer watermark in bytes: whenever a
+	send buffer holds fewer bytes than its current watermark, another
+	16 KiB block is read from disk onto it. Too small hurts upload
+	capacity; too large wastes memory. The effective watermark is
+	lower when the upload rate to the peer is low — see
+	`sendBufferWatermarkFactor`.
+	"""
+	sendBufferWatermark: Int
+	"""
+	Percentage multiplied by the current upload rate to a peer to
+	derive that peer's send-buffer watermark (50 means 0.5× the
+	rate), clamped to at most `sendBufferWatermark`. Values above 100
+	can improve upload performance and disk throughput on
+	high-capacity connections; too high wastes RAM and biases disk
+	work toward read jobs over write jobs.
+	"""
+	sendBufferWatermarkFactor: Int
+	"""
+	DSCP code point (0-63) set in the IP header of every packet sent
+	to peers (including web seeds). 0 means no marking; 1 is Lower
+	Effort. See RFC 8622 and IANA's DSCP registry for other values.
+	"""
+	peerDscp: Int
+	"""
+	Maximum number of auto-managed torrents allowed to actively
+	download at once; the rest are queued (paused by
+	auto-management). -1 means unlimited. The overall target of
+	active torrents is min(`activeDownloads` + `activeSeeds`,
+	`activeLimit`); torrents that are not auto-managed do not count
+	against these limits.
+	"""
+	activeDownloads: Int
+	"""
+	Maximum number of auto-managed torrents allowed to actively seed
+	at once; the rest are queued (paused by auto-management). -1
+	means unlimited. The overall target of active torrents is
+	min(`activeDownloads` + `activeSeeds`, `activeLimit`); torrents
+	that are not auto-managed do not count against these limits.
+	"""
+	activeSeeds: Int
+	"""
+	Maximum number of torrents checking files simultaneously. -1
+	means unlimited.
+	"""
+	activeChecking: Int
+	"""
+	Maximum number of auto-managed torrents announced to the DHT. -1
+	means unlimited. Torrents beyond the limit stay active without
+	being announced: a peer that knows about a torrent can still
+	connect, unless the torrent is paused.
+	"""
+	activeDhtLimit: Int
+	"""
+	Maximum number of auto-managed torrents announced to their
+	trackers. -1 means unlimited. Torrents beyond the limit stay
+	active without being announced: a peer that knows about a torrent
+	can still connect, unless the torrent is paused.
+	"""
+	activeTrackerLimit: Int
+	"""
+	Maximum number of auto-managed torrents announced over Local
+	Service Discovery. -1 means unlimited. Torrents beyond the limit
+	stay active without being announced: a peer that knows about a
+	torrent can still connect, unless the torrent is paused.
+	"""
+	activeLsdLimit: Int
+	"""
+	Hard cap on the number of active auto-managed torrents; also
+	applies to slow torrents. -1 means unlimited. See
+	`activeDownloads` and `activeSeeds` for how the active set is
+	divided.
+	"""
+	activeLimit: Int
+	"""
+	Seconds between updates (and rotations) of the auto-managed
+	torrent queue.
+	"""
+	autoManageInterval: Int
+	"""
+	Seconds a torrent may be an active seed before it is considered
+	to have met its seeding goal and yields queue priority to other
+	torrents (it may still seed, just without priority). See also
+	`shareRatioLimit` and `seedTimeRatioLimit`.
+	"""
+	seedTimeLimit: Int
+	"""
+	Seconds between automatic scrapes of queued torrents (paused,
+	auto-managed ones). Their downloader/seed ratios are tracked to
+	decide which torrents to seed and which to pause.
+	"""
+	autoScrapeInterval: Int
+	"""
+	Minimum seconds between any two automatic scrapes regardless of
+	torrent, bounding scrape traffic when many auto-managed torrents
+	are paused.
+	"""
+	autoScrapeMinInterval: Int
+	"""
+	Maximum number of known peers kept per torrent. Known peers are
+	not necessarily connected, so this should be much larger than the
+	connection limit. Eviction starts when the list passes 90% of the
+	limit; at the limit, no more peers are added. 0 means unlimited.
+	"""
+	maxPeerlistSize: Int
+	"""
+	Like `maxPeerlistSize`, but for paused torrents, where a large
+	peer list matters less; a lower value saves memory.
+	"""
+	maxPausedPeerlistSize: Int
+	"""
+	Minimum announce interval in seconds accepted from a tracker
+	response — a sanity check that avoids hammering misconfigured
+	trackers.
+	"""
+	minAnnounceInterval: Int
+	"""
+	Seconds a newly started torrent is considered active regardless
+	of transfer rates, giving it a fair chance to start before the
+	`dontCountSlowTorrents` logic can classify it as inactive.
+	"""
+	autoManageStartup: Int
+	"""
+	Number of pieces to send a peer while seeding before rotating
+	another peer into the unchoke set.
+	"""
+	seedingPieceQuota: Int
+	"""
+	Receive buffer size (`SO_RCVBUF`) set on peer sockets, in bytes;
+	0 keeps the OS default. Note that all uTP peers of a listen
+	socket share one UDP socket buffer, along with DHT and UDP
+	tracker traffic; a buffer too small for the combined traffic
+	drops packets.
+	"""
+	recvSocketBufferSize: Int
+	"""
+	Send buffer size (`SO_SNDBUF`) set on peer sockets, in bytes; 0
+	keeps the OS default. Note that all uTP peers of a listen socket
+	share one UDP socket buffer, along with DHT and UDP tracker
+	traffic; a buffer too small for the combined traffic drops
+	packets.
+	"""
+	sendSocketBufferSize: Int
+	"""
+	Best-effort cap in bytes on a single peer connection's receive
+	buffer: growth stops here, but the buffer always accommodates
+	the current message, so one large legal message (up to about
+	1 MiB) can exceed the cap.
+	"""
+	maxPeerRecvBufferSize: Int
+	"""
+	Seconds after a disk write error before an auto-managed torrent
+	is taken out of upload mode again, to test whether the error
+	condition has been fixed. Only auto-managed torrents leave upload
+	mode automatically; clear the `UPLOAD_MODE` torrent flag to leave
+	it explicitly.
+	"""
+	optimisticDiskRetry: Int
+	"""
+	Maximum suggested piece indexes remembered per peer, bounding
+	memory use when a peer floods `suggest` messages.
+	"""
+	maxSuggestPieces: Int
+	"""
+	Seconds between Local Service Discovery announces of a torrent.
+	"""
+	localServiceAnnounceInterval: Int
+	"""
+	Seconds between DHT announces of a torrent.
+	"""
+	dhtAnnounceInterval: Int
+	"""
+	Seconds to keep UDP tracker connection tokens around; the
+	protocol specifies 60. Higher values need fewer packets, but
+	require the tracker to be configured with a matching expiry.
+	"""
+	udpTrackerTokenExpiry: Int
+	"""
+	Number of optimistic unchoke slots. More slots find good peers
+	faster but use more bandwidth. 0 means automatic: 20% of the
+	allowed upload slots.
+	"""
+	numOptimisticUnchokeSlots: Int
+	"""
+	Maximum peers accepted from a single peer's PEX message — a cap
+	on how many concurrent peers any one peer may claim to be
+	connected to. Entries beyond the limit are ignored.
+	"""
+	maxPexPeers: Int
+	"""
+	Milliseconds between internal ticks — the frequency at which
+	bandwidth quota is distributed to peers; at most 1000. A low
+	value (around 100) gives finer-grained rate limiting; a higher
+	value saves CPU cycles.
+	
+	A negative value removes the once-per-second gate on the heavier
+	per-torrent work (the timer itself still fires every
+	millisecond). That is intended for tests and fuzzing that need
+	the session to react instantly; do not use it in production.
+	"""
+	tickInterval: Int
+	"""
+	Target share ratio for share-mode torrents: at 3, the client
+	tries to upload three times as much as it downloads. Values below
+	2 make no sense, and too-high values are so conservative that
+	nothing may be downloaded at all — a piece can only be uploaded
+	as many times as there are peers who still need it.
+	"""
+	shareModeTarget: Int
+	"""
+	Session-global upload rate limit in bytes per second. 0 means
+	unlimited. Peers on the local network are not rate limited by
+	default.
+	"""
+	uploadRateLimit: Int
+	"""
+	Session-global download rate limit in bytes per second. 0 means
+	unlimited. Peers on the local network are not rate limited by
+	default.
+	"""
+	downloadRateLimit: Int
+	"""
+	Average bytes per second the DHT node is allowed to send. When
+	incoming requests would exceed the quota with their responses,
+	requests are dropped until the quota is replenished.
+	"""
+	dhtUploadRateLimit: Int
+	"""
+	Maximum number of unchoked peers in the session when
+	`chokingAlgorithm` is `FIXED_SLOTS`. -1 means unlimited: all
+	peers are always unchoked.
+	"""
+	unchokeSlotsLimit: Int
+	"""
+	Global limit on the number of open peer connections. A hard
+	minimum of two connections per torrent still applies, so enough
+	torrents can exceed a low limit.
+	"""
+	connectionsLimit: Int
+	"""
+	Number of incoming connections accepted beyond
+	`connectionsLimit`, as candidates that may replace existing
+	connections.
+	"""
+	connectionsSlack: Int
+	"""
+	Target one-way delay for uTP sockets, in milliseconds. Higher
+	values are more aggressive and queue more at the upload
+	bottleneck; too-low values drown in measurement noise and send
+	too slowly.
+	"""
+	utpTargetDelay: Int
+	"""
+	Maximum bytes the uTP congestion window may grow within one
+	round-trip time. Too high, and the controller overreacts to noise
+	and becomes unstable; too low, and it reacts slowly to congestion
+	(and backs off slowly).
+	"""
+	utpGainFactor: Int
+	"""
+	Shortest allowed uTP socket timeout, in milliseconds. The actual
+	timeout scales with the connection's round-trip time but never
+	goes below this value. A connection times out when a whole window
+	is lost, or one packet is lost twice in a row; a shorter timeout
+	recovers faster, provided the round-trip time is low enough.
+	"""
+	utpMinTimeout: Int
+	"""
+	Number of SYN packets sent — each timing out — before giving up
+	and closing a uTP socket.
+	"""
+	utpSynResends: Int
+	"""
+	Number of FIN packets sent — each timing out — before giving up
+	and closing a uTP socket.
+	"""
+	utpFinResends: Int
+	"""
+	Number of times one packet is resent (lost or timed out) before
+	the uTP connection is considered broken and closed.
+	"""
+	utpNumResends: Int
+	"""
+	Timeout in milliseconds for the initial uTP SYN packet; each
+	consecutive timeout doubles it.
+	"""
+	utpConnectTimeout: Int
+	"""
+	Percentage applied to the uTP congestion window when a packet
+	loss is experienced. Do not change this unless you know what you
+	are doing, and never set it above 100.
+	"""
+	utpLossMultiplier: Int
+	"""
+	Backlog passed to `listen()` on listen sockets: the number of
+	pending incoming connections queued while not actively accepting.
+	5 is sufficient for a normal client; raise it for
+	high-performance servers expecting many connections. Takes effect
+	the next time `listenInterfaces` is updated.
+	"""
+	listenQueueSize: Int
+	"""
+	Number of peers to connect immediately when the first tracker
+	response for a torrent arrives, instead of waiting for the
+	once-per-second connect scheduler — a boost that accelerates new
+	torrents. At most 255.
+	"""
+	torrentConnectBoost: Int
+	"""
+	Maximum size in bytes of metadata (.torrent contents) accepted
+	via the metadata extension, i.e. from magnet links.
+	"""
+	maxMetadataSize: Int
+	"""
+	Number of disk I/O threads used for piece-hash verification
+	during full torrent checking, in addition to the regular
+	`aioThreads` (hash checks during normal download use the regular
+	threads). Hasher threads also perform the disk reads; on storage
+	optimized for sequential access, such as hard drives, 1 (the
+	default) is best.
+	"""
+	hashingThreads: Int
+	"""
+	Number of 16 KiB blocks kept outstanding while checking torrents.
+	Higher values give faster rechecks but use more memory.
+	"""
+	checkingMemUsage: Int
+	"""
+	When above 0, pieces are announced to peers this many
+	milliseconds before they are expected to finish downloading — and
+	before they are hash-checked — to gain up to 1.5 round trips per
+	piece. 0 disables predictive announcing.
+	"""
+	predictivePieceAnnounce: Int
+	"""
+	Number of disk I/O threads, for the asynchronous I/O back-ends
+	that use a thread pool.
+	"""
+	aioThreads: Int
+	"""
+	How aggressively to back off from retrying failing trackers: the
+	wait before retry number `fails` is `5 + 5 × trackerBackoff / 100
+	× fails²` seconds.
+	"""
+	trackerBackoff: Int
+	"""
+	Share ratio (uploaded/downloaded) as a percentage at which a
+	seeding torrent is considered done and yields queue priority to
+	other torrents (it may still seed, just without priority). See
+	also `seedTimeRatioLimit` and `seedTimeLimit`.
+	"""
+	shareRatioLimit: Int
+	"""
+	Seed-time ratio (seconds as seed over seconds as downloader) as a
+	percentage at which a seeding torrent is considered done and
+	yields queue priority to other torrents (it may still seed, just
+	without priority). See also `shareRatioLimit` and
+	`seedTimeLimit`.
+	"""
+	seedTimeRatioLimit: Int
+	"""
+	Percentage of a torrent's peers to disconnect in each turnover
+	round (every `peerTurnoverInterval` seconds), to make room for
+	trying other peers. Only applies while above the
+	`peerTurnoverCutoff` fill grade.
+	"""
+	peerTurnover: Int
+	"""
+	Fill grade that triggers peer turnover, as a percentage of the
+	torrent's connection limit: `peerTurnover` disconnects only
+	happen while more peers than that are connected.
+	"""
+	peerTurnoverCutoff: Int
+	"""
+	Seconds between peer-turnover rounds — the optimistic disconnects
+	governed by `peerTurnover` and `peerTurnoverCutoff`.
+	"""
+	peerTurnoverInterval: Int
+	"""
+	Every n-th connection attempt is granted to a seeding or finished
+	torrent instead of a downloading one; this is n. Connection
+	attempts are a limited resource (`connectionSpeed`), and
+	downloading torrents are prioritized for them by default.
+	"""
+	connectSeedEveryNDownload: Int
+	"""
+	Maximum size in bytes of an HTTP response accepted when
+	announcing to trackers or downloading .torrent files.
+	"""
+	maxHttpRecvBufferSize: Int
+	"""
+	Number of times to retry binding a listen port that failed,
+	incrementing the port by one each try.
+	"""
+	maxRetryPortBind: Int
+	"""
+	Download rate in bytes per second below which a torrent may count
+	as inactive for queuing: a torrent below both `inactiveDownRate`
+	and `inactiveUpRate` for `autoManageStartup` seconds is
+	considered inactive, and another queued torrent may start. Only
+	applies when `dontCountSlowTorrents` is true.
+	"""
+	inactiveDownRate: Int
+	"""
+	Upload rate in bytes per second below which a torrent may count
+	as inactive for queuing; see `inactiveDownRate`.
+	"""
+	inactiveUpRate: Int
+	"""
+	Maximum web-seed request range in bytes — the largest possible
+	single sequential request. Values below the piece size are
+	ignored. Relate it to the download speed to avoid creating too
+	many expensive HTTP requests per second, but note that a request
+	spanning the whole file precludes parallel requests, and that
+	combining web seeds with rarest-first BitTorrent downloading
+	splits requests around already-picked pieces.
+	"""
+	urlseedMaxRequestBytes: Int
+	"""
+	Seconds to wait before retrying a failed web-seed hostname
+	lookup.
+	"""
+	webSeedNameLookupRetry: Int
+	"""
+	Seconds between closing the file that has been open the longest,
+	nudging the operating system to flush its disk cache; observed to
+	be necessary on Windows to keep the cache bounded. 0 disables the
+	feature (the default everywhere except Windows, where it defaults
+	to 240).
+	"""
+	closeFileInterval: Int
+	"""
+	Milliseconds after a uTP congestion-window reduction during which
+	further packet losses do not reduce the window again.
+	"""
+	utpCwndReduceTimer: Int
+	"""
+	Maximum web-seed connections per torrent.
+	"""
+	maxWebSeedConnections: Int
+	"""
+	Seconds a hostname stays in the internal DNS cache before it is
+	considered out of date and removed; negative values mean zero.
+	Failed lookups are cached too, for one eighth of this time.
+	"""
+	resolverCacheTimeout: Int
+	"""
+	Not-sent low watermark for socket send buffers — the
+	Linux-specific `TCP_NOTSENT_LOWAT` TCP socket option.
+	"""
+	sendNotSentLowWatermark: Int
+	"""
+	Starting threshold of the rate-based choker (`chokingAlgorithm:
+	RATE_BASED`): peers are visited in decreasing upload rate, the
+	threshold grows proportionally with each visited peer, and the
+	peers whose upload rate exceeds it are unchoked. A higher start
+	value yields fewer unchoke slots; a lower one, more.
+	"""
+	rateChokerInitialThreshold: Int
+	"""
+	Requested expiration time of UPnP port mappings, in seconds; 0
+	requests a permanent lease. Some routers mishandle expiring
+	mappings without reporting an error — use 0 for those. Otherwise,
+	do not set it below 5 minutes.
+	"""
+	upnpLeaseDuration: Int
+	"""
+	Maximum concurrent HTTP tracker announces; further announces are
+	queued and issued as outstanding ones complete.
+	"""
+	maxConcurrentHttpAnnounces: Int
+	"""
+	Maximum number of peers sent in a reply to a DHT `get_peers`
+	query.
+	"""
+	dhtMaxPeersReply: Int
+	"""
+	Number of concurrent search requests the DHT node sends when
+	announcing and refreshing the routing table — the `alpha`
+	parameter of the Kademlia paper.
+	"""
+	dhtSearchBranching: Int
+	"""
+	Failed contact attempts before a DHT node is removed from the
+	routing table. Only relevant when no working replacement is
+	known; a failing node with a known replacement is replaced
+	immediately.
+	"""
+	dhtMaxFailCount: Int
+	"""
+	Maximum torrents tracked by the DHT node — an upper bound that
+	keeps malicious nodes from forcing unbounded memory use.
+	"""
+	dhtMaxTorrents: Int
+	"""
+	Maximum immutable/mutable items the DHT node stores.
+	"""
+	dhtMaxDhtItems: Int
+	"""
+	Maximum peers the DHT node stores per torrent.
+	"""
+	dhtMaxPeers: Int
+	"""
+	Seconds a remote DHT node stays banned after exceeding the rate
+	limit. The rate limit (`dhtBlockRatelimit`) is averaged over 10
+	seconds to allow bursts.
+	"""
+	dhtBlockTimeout: Int
+	"""
+	Maximum packets per second a remote DHT node may send before it
+	is banned (see `dhtBlockTimeout`).
+	"""
+	dhtBlockRatelimit: Int
+	"""
+	Seconds until a stored immutable/mutable DHT item expires. 0 (the
+	default) means it never expires.
+	"""
+	dhtItemLifetime: Int
+	"""
+	Seconds between recomputations of the DHT info-hash sample: the
+	node precomputes a subset of its tracked info-hashes and serves
+	that instead of recomputing per request. Valid range 0..=21600.
+	"""
+	dhtSampleInfohashesInterval: Int
+	"""
+	Maximum elements in the sampled info-hash subset. Very large
+	values may be clamped by the DHT storage so replies still fit in
+	UDP packets.
+	"""
+	dhtMaxInfohashesSampleCount: Int
+	"""
+	Maximum number of pieces allowed in metadata received via magnet
+	links.
+	"""
+	maxPieceCount: Int
+	"""
+	Maximum bencoded tokens parsed from metadata (.torrent contents)
+	received from peers — a denial-of-service guard that may need
+	raising for very large torrents.
+	"""
+	metadataTokenLimit: Int
+	"""
+	With the mmap disk I/O backend, files smaller than this many 16
+	KiB blocks are not memory-mapped but accessed with plain
+	pread/pwrite.
+	"""
+	mmapFileSizeCutoff: Int
+	"""
+	Port reported to trackers and the DHT as the `port` announce
+	parameter, without affecting the actual listen port or Local
+	Service Discovery. 0 (the default) reports the real listening
+	port.
+	
+	Only for special setups where the externally reachable port
+	differs from the local one — for example, a local proxy providing
+	a reverse tunnel through NAT-PMP, where peers must connect to the
+	external NAT-PMP port.
+	"""
+	announcePort: Int
+	"""
+	Requested lifetime of NAT-PMP and PCP port mappings, in seconds.
+	"""
+	natpmpLeaseDuration: Int
+	"""
+	The user agent identity to present. `UNRECOGNIZED` is read-only
+	and rejected here.
+	"""
+	userAgent: UserAgent
+	"""
+	Proxy for outgoing connections; `null` removes the proxy and
+	resets its backing settings.
+	"""
+	proxy: ProxySettingsInput
+	"""
+	I2P SAM bridge configuration; `null` disables I2P.
+	"""
+	i2p: I2pSettingsInput
+	"""
+	BitTorrent protocol encryption policy.
+	"""
+	encryption: EncryptionSettingsInput
+	"""
+	Enabled peer transport protocols, per direction.
+	"""
+	peerTransports: PeerTransportsInput
+	"""
+	Source-port range for outgoing peer connections; `null` restores
+	OS-selected ephemeral ports.
+	"""
+	outgoingPortRange: PortRangeInput
+	"""
+	OS cache behavior of disk reads and writes.
+	"""
+	diskIoCache: DiskIoCacheInput
+	"""
+	How to flush pieces to disk with the mmap disk I/O backend.
+	"""
+	mmapWriteMode: MmapWriteMode
+	"""
+	Whether to send `suggest` messages to peers.
+	"""
+	suggestMode: SuggestMode
+	"""
+	Which algorithm chooses peers to unchoke.
+	"""
+	chokingAlgorithm: ChokingAlgorithm
+	"""
+	Which algorithm chooses peers to unchoke while seeding.
+	"""
+	seedChokingAlgorithm: SeedChokingAlgorithm
+	"""
+	How rate limits are divided between TCP and uTP peers.
+	"""
+	mixedModeAlgorithm: MixedModeAlgorithm
+	"""
+	Interfaces/adapters for outgoing connections. An empty list lets
+	the OS route.
+	"""
+	outgoingInterfaces: [String!]
+	"""
+	Listen endpoints for incoming connections.
+	"""
+	listenInterfaces: [ListenInterfaceInput!]
+	"""
+	DHT bootstrap nodes. An empty list means no bootstrap nodes.
+	"""
+	dhtBootstrapNodes: [HostPortInput!]
+}
+
+"""
+Whether a metric only ever increases or fluctuates.
+"""
+enum StatKind {
+	"""
+	The value only ever increases.
+	"""
+	COUNTER
+	"""
+	The value can rise and fall.
+	"""
+	GAUGE
+}
+
+"""
+One session-statistics metric sample.
+"""
+type StatValue {
+	"""
+	Metric name, e.g. `net.recv_payload_bytes`. The set of names
+	depends on the daemon build; discover it by querying
+	`sessionStats` without a `names` filter.
+	"""
+	name: String!
+	"""
+	Whether the metric is a counter or a gauge.
+	"""
+	kind: StatKind!
+	"""
+	The current value.
+	"""
+	value: Int!
+}
+
+"""
+The torrent's lifecycle state changed.
+"""
+type StateChangedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The new state.
+	"""
+	state: TorrentState!
+	"""
+	The previous state.
+	"""
+	prevState: TorrentState!
+}
+
+"""
+A batch of status snapshots of torrents that changed recently.
+Produced about once per second while an unfiltered `torrentEvents`
+or a `torrentChanged` subscription is active.
+"""
+type StateUpdateEvent {
+	"""
+	The changed torrents.
+	"""
+	torrents: [Torrent!]!
+}
+
+"""
+Storage allocation mode.
+"""
+enum StorageMode {
+	"""
+	Full file allocation up front.
+	"""
+	ALLOCATE
+	"""
+	Sparse files, allocated as pieces arrive.
+	"""
+	SPARSE
+	"""
+	A mode this API version does not recognize.
+	"""
+	UNKNOWN
+}
+
+"""
+The torrent's storage finished moving (the outcome of
+`moveStorage`).
+"""
+type StorageMovedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The new save path.
+	"""
+	path: String!
+}
+
+"""
+Moving the torrent's storage failed.
+"""
+type StorageMovedFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Failure description, when the engine supplied one.
+	"""
+	error: String
+}
+
+"""
+Live event streams (served over graphql-ws). Streams have no replay
+or resume: after a reconnect, re-query current state. All streams
+end when the daemon shuts down.
+"""
+type SubscriptionRoot {
+	"""
+	Torrent events from the engine event bus, optionally filtered to
+	a single torrent (which excludes session-level events, including
+	`StateUpdateEvent` batches; filtering on an unknown torrent
+	fails at subscription start). An unfiltered subscription
+	activates the engine's periodic `StateUpdateEvent` batches. A
+	slow consumer that falls behind is disconnected (the stream
+	ends), since missed events can include removals: resubscribe and
+	take a fresh snapshot.
+	"""
+	torrentEvents(infoHash: InfoHash): TorrentEvent!
+	"""
+	Non-empty batches of status snapshots of torrents that changed,
+	about once per second — optionally restricted to one torrent
+	(filtering on an unknown torrent fails at subscription start).
+	Subscribing activates the engine's periodic state updates.
+	"""
+	torrentChanged(infoHash: InfoHash): [Torrent!]!
+	"""
+	Progress of one torrent-creation job: the current snapshot
+	immediately, then coalesced changes, ending with one terminal
+	snapshot. An unknown or pruned job id fails at subscription
+	start.
+	"""
+	createJobProgress(id: Int!): CreateJob!
+	"""
+	Session statistics counters: one sample immediately, then one
+	per interval (all metrics, or the named subset; unknown names
+	are silently omitted). `intervalMs` is clamped to at least 100;
+	missed ticks are skipped.
+	"""
+	sessionStats(intervalMs: Int! = 1000, names: [String!]): [StatValue!]!
+}
+
+"""
+Whether to send `suggest` messages to peers.
+"""
+enum SuggestMode {
+	"""
+	Send no piece suggestions.
+	"""
+	NONE
+	"""
+	Suggest pieces that are in the read cache (cheap to serve).
+	"""
+	READ_CACHE
+}
+
+"""
+A torrent in the session.
+
+Scalar fields come from one status snapshot taken when the object
+was resolved; `pieces`, `files`, `trackers`, and `peers` issue
+separate live requests and can reflect a slightly later state.
+"""
+type Torrent {
+	"""
+	Session-unique id. NOT stable across daemon restarts; use the
+	info-hash as the durable identifier.
+	"""
+	id: Int!
+	"""
+	Best info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The v1 (SHA-1) info-hash, if the torrent has one. A hybrid
+	magnet may gain it when metadata arrives.
+	"""
+	infoHashV1: InfoHash
+	"""
+	The v2 (SHA-256) info-hash, if the torrent has one. A hybrid
+	magnet may gain it when metadata arrives.
+	"""
+	infoHashV2: InfoHash
+	"""
+	Display name: from metadata, or the provisional add/magnet name
+	before metadata.
+	"""
+	name: String!
+	"""
+	The torrent's current primary task.
+	"""
+	state: TorrentState!
+	"""
+	Completion of the currently selected files, 0..=1.
+	"""
+	progress: Float!
+	"""
+	Completion in parts-per-million (avoids float rounding).
+	"""
+	progressPpm: Int!
+	"""
+	The error that stopped the torrent, or `null` if none.
+	"""
+	error: TorrentErrorInfo
+	"""
+	The daemon-local directory the torrent is stored in.
+	"""
+	savePath: String!
+	"""
+	URL of the last working tracker, or `null` if none has responded
+	yet.
+	"""
+	currentTracker: String
+	"""
+	Seconds until the next scheduled tracker announce.
+	"""
+	nextAnnounceSeconds: Int!
+	"""
+	Bytes received during the current active run, including protocol
+	overhead; resets when the torrent is paused and restarted.
+	"""
+	totalDownload: Int!
+	"""
+	Bytes sent during the current active run, including protocol
+	overhead; resets when the torrent is paused and restarted.
+	"""
+	totalUpload: Int!
+	"""
+	Payload bytes received during the current active run; resets
+	when the torrent is paused and restarted.
+	"""
+	totalPayloadDownload: Int!
+	"""
+	Payload bytes sent during the current active run; resets when
+	the torrent is paused and restarted.
+	"""
+	totalPayloadUpload: Int!
+	"""
+	Bytes downloaded that failed the hash check, for the current
+	active run.
+	"""
+	totalFailedBytes: Int!
+	"""
+	Bytes downloaded more than once (redundant), for the current
+	active run.
+	"""
+	totalRedundantBytes: Int!
+	"""
+	Bytes downloaded and verified (of the whole torrent).
+	"""
+	totalDone: Int!
+	"""
+	Size of the whole torrent in bytes; `null` until metadata is
+	available.
+	"""
+	totalSize: Int
+	"""
+	Bytes done of the selected files.
+	"""
+	totalWantedDone: Int!
+	"""
+	Bytes of the selected files.
+	"""
+	totalWanted: Int!
+	"""
+	Persistent payload bytes sent across all runs, restored from
+	resume data.
+	"""
+	allTimeUpload: Int!
+	"""
+	Persistent payload bytes received across all runs, restored from
+	resume data.
+	"""
+	allTimeDownload: Int!
+	"""
+	Unix time the torrent was added.
+	"""
+	addedTime: Int!
+	"""
+	Unix time the torrent finished; `null` if it never has.
+	"""
+	completedTime: Int
+	"""
+	Unix time a complete copy of the torrent was last seen in the
+	swarm; `null` if never.
+	"""
+	lastSeenComplete: Int
+	"""
+	How disk space for the torrent is allocated.
+	"""
+	storageMode: StorageMode!
+	"""
+	Position in the download queue; `null` for torrents not in the
+	queue (seeds and finished torrents).
+	"""
+	queuePosition: Int
+	"""
+	Total download rate, bytes/s.
+	"""
+	downloadRate: Int!
+	"""
+	Total upload rate, bytes/s.
+	"""
+	uploadRate: Int!
+	"""
+	Payload-only download rate, bytes/s.
+	"""
+	downloadPayloadRate: Int!
+	"""
+	Payload-only upload rate, bytes/s.
+	"""
+	uploadPayloadRate: Int!
+	"""
+	Connected peers that are seeds.
+	"""
+	numSeeds: Int!
+	"""
+	Established peer connections (including seeds).
+	"""
+	numPeers: Int!
+	"""
+	Seeds in the swarm per the tracker scrape; `null` when no scrape
+	data is available.
+	"""
+	numComplete: Int
+	"""
+	Downloaders in the swarm per the tracker scrape; `null` when no
+	scrape data is available.
+	"""
+	numIncomplete: Int
+	"""
+	Seeds in the known-peer list (connected or not, including failed
+	and banned entries).
+	"""
+	listSeeds: Int!
+	"""
+	Peers in the known-peer list (connected or not, including failed
+	and banned entries).
+	"""
+	listPeers: Int!
+	"""
+	Known peers currently usable as connection candidates.
+	"""
+	connectCandidates: Int!
+	"""
+	Number of pieces downloaded (the total is `pieces.total`).
+	"""
+	piecesHave: Int!
+	"""
+	Estimated distinct copies of the rarest pieces across connected
+	peers; the fraction is the share of pieces with more copies than
+	the rarest. `null` when unavailable (e.g. while seeding).
+	"""
+	distributedCopies: Float
+	"""
+	Block size used for peer requests, in bytes (normally 16 KiB).
+	"""
+	blockSize: Int!
+	"""
+	Peers currently unchoked (being uploaded to).
+	"""
+	numUploads: Int!
+	"""
+	Peer connections including half-open ones; at least `numPeers`.
+	"""
+	numConnections: Int!
+	"""
+	Configured unchoke-slot cap for this torrent (-1 = unlimited).
+	"""
+	uploadsLimit: Int!
+	"""
+	Configured connection cap for this torrent (-1 = unlimited).
+	"""
+	connectionsLimit: Int!
+	"""
+	Per-torrent upload limit, bytes/s (-1 = no per-torrent limit;
+	session-wide limits still apply).
+	"""
+	uploadLimit: Int!
+	"""
+	Per-torrent download limit, bytes/s (-1 = no per-torrent limit;
+	session-wide limits still apply).
+	"""
+	downloadLimit: Int!
+	"""
+	Peers waiting for this torrent's upload rate limiter.
+	"""
+	upBandwidthQueue: Int!
+	"""
+	Peers waiting for this torrent's download rate limiter.
+	"""
+	downBandwidthQueue: Int!
+	"""
+	Auto-management seeding importance; higher ranks keep their
+	seeding slot longer.
+	"""
+	seedRank: Int!
+	"""
+	Whether the torrent has state changes not yet saved to resume
+	data.
+	"""
+	needSaveResumeData: Boolean!
+	"""
+	Whether every piece is present. Differs from `isFinished` when
+	files or pieces are skipped via priorities.
+	"""
+	isSeeding: Boolean!
+	"""
+	Whether every priority-nonzero piece is present.
+	"""
+	isFinished: Boolean!
+	"""
+	The torrent's own pause flag. Does not reflect a global
+	`pauseSession`; check `session.isPaused` too.
+	"""
+	isPaused: Boolean!
+	"""
+	Whether queue logic may start and stop this torrent (the
+	`AUTO_MANAGED` flag).
+	"""
+	isAutoManaged: Boolean!
+	"""
+	Whether metadata is available (false for a magnet still fetching
+	it).
+	"""
+	hasMetadata: Boolean!
+	"""
+	Sum of all non-pad file sizes (what is actually written to disk);
+	`null` until metadata is available.
+	"""
+	sizeOnDisk: Int
+	"""
+	Byte length of each piece (except possibly the last one); `null`
+	until metadata is available.
+	"""
+	pieceLength: Int
+	"""
+	Whether the torrent is private (BEP 27); `null` until metadata is
+	available.
+	"""
+	isPrivate: Boolean
+	"""
+	Whether this is an i2p torrent (a tracker URL has an `.i2p`
+	domain); `null` until metadata is available.
+	"""
+	isI2P: Boolean
+	"""
+	Whether an incoming connection has ever been received for this
+	torrent (an indication of reachability, not a live connection).
+	"""
+	hasIncoming: Boolean!
+	"""
+	Whether a `moveStorage` operation is in progress.
+	"""
+	movingStorage: Boolean!
+	"""
+	Whether auto-management currently lets the torrent announce to
+	its trackers.
+	"""
+	announcingToTrackers: Boolean!
+	"""
+	Whether auto-management currently lets the torrent announce via
+	Local Service Discovery.
+	"""
+	announcingToLsd: Boolean!
+	"""
+	Whether auto-management currently lets the torrent announce to
+	the DHT.
+	"""
+	announcingToDht: Boolean!
+	"""
+	The torrent's active option flags.
+	"""
+	flags: [TorrentFlag!]!
+	"""
+	A magnet link (info-hashes and display name only).
+	"""
+	magnetUri: String!
+	"""
+	Piece availability; set `includeBitfield` for the packed bitfield.
+	"""
+	pieces(includeBitfield: Boolean! = false): PieceInfo!
+	"""
+	Per-file details; `null` until metadata is available. Paths
+	reflect renames applied via `renameFile`.
+	"""
+	files: [TorrentFile!]
+	"""
+	The torrent's trackers.
+	"""
+	trackers: [Tracker!]!
+	"""
+	The torrent's current HTTP/web seed URLs (BEP 19), including ones
+	added via `addUrlSeed`.
+	"""
+	urlSeeds: [String!]!
+	"""
+	Currently connected peers.
+	"""
+	peers: [Peer!]!
+}
+
+"""
+A torrent was added and registered in the session.
+"""
+type TorrentAddedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+Payload/partfile deletion after `removeTorrent(deleteFiles: true)`
+failed.
+"""
+type TorrentDeleteFailedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Failure description, when the engine supplied one.
+	"""
+	error: String
+}
+
+"""
+Payload/partfile deletion after `removeTorrent(deleteFiles: true)`
+completed.
+"""
+type TorrentDeletedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+The torrent entered an error state and stopped.
+"""
+type TorrentErrorEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	Error description, when the engine supplied one.
+	"""
+	error: String
+	"""
+	The affected file path; `null` when the error is not
+	file-related.
+	"""
+	filename: String
+}
+
+"""
+A torrent-level error (the torrent is stopped until it is cleared).
+"""
+type TorrentErrorInfo {
+	"""
+	Human-readable error message.
+	"""
+	message: String!
+	"""
+	Index of the file the error relates to, or a negative sentinel:
+	-1 none/not file-specific, -3 SSL context, -4 metadata,
+	-5 internal exception, -6 partfile.
+	"""
+	file: Int!
+}
+
+"""
+Union of all possible torrent events.
+"""
+union TorrentEvent = TorrentAddedEvent | TorrentRemovedEvent | TorrentFinishedEvent | MetadataReceivedEvent | MetadataFailedEvent | TorrentErrorEvent | StateChangedEvent | StateUpdateEvent | ResumeDataSavedEvent | ResumeDataFailedEvent | FileRenamedEvent | FileRenameFailedEvent | StorageMovedEvent | StorageMovedFailedEvent | ReadPieceEvent | TrackersEvent | PeersEvent | FileProgressEvent | ScrapeReplyEvent | ScrapeFailedEvent | TorrentDeletedEvent | TorrentDeleteFailedEvent | SessionErrorEvent
+
+"""
+One file within a torrent, in metadata (index) order.
+"""
+type TorrentFile {
+	"""
+	Zero-based file index, as used by `renameFile` and the priority
+	mutations.
+	"""
+	index: Int!
+	"""
+	Path relative to the save path.
+	"""
+	path: String!
+	"""
+	File size in bytes.
+	"""
+	size: Int!
+	"""
+	Byte offset within the torrent.
+	"""
+	offset: Int!
+	"""
+	Download priority (0 = don't download, 1..=7, default 4). A
+	priority-0 file can still gain partial data from boundary pieces
+	it shares with wanted files.
+	"""
+	priority: Int!
+	"""
+	Bytes of this file downloaded so far.
+	"""
+	progressBytes: Int!
+	"""
+	Whether this is a pad file: alignment filler defined by the
+	metadata, not ordinary payload.
+	"""
+	isPadFile: Boolean!
+	"""
+	Whether the file is stored as a symlink (BEP 47).
+	"""
+	isSymlink: Boolean!
+	"""
+	The symlink's target path, when `isSymlink` is set.
+	"""
+	symlinkTarget: String
+	"""
+	Whether the file has the executable attribute.
+	"""
+	isExecutable: Boolean!
+	"""
+	Whether the file has the hidden attribute.
+	"""
+	isHidden: Boolean!
+}
+
+"""
+All selected (priority-nonzero) content finished downloading.
+"""
+type TorrentFinishedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+A torrent option flag. Read via `Torrent.flags`, changed via
+`setTorrentFlags` (some flags are only meaningful at add time or are
+managed by the engine, as noted per value).
+"""
+enum TorrentFlag {
+	"""
+	Trust that all files are complete and verify pieces lazily, on
+	first request. Only meaningful when adding a torrent with
+	metadata; a failed hash check leaves seed mode and triggers a
+	recheck.
+	"""
+	SEED_MODE
+	"""
+	Make no piece requests, only upload. Auto-management may clear
+	it (e.g. after a disk error is resolved).
+	"""
+	UPLOAD_MODE
+	"""
+	Download only pieces that improve the share ratio instead of the
+	whole content. Do not combine with manual file/piece priorities.
+	"""
+	SHARE_MODE
+	"""
+	Apply the session IP filter to this torrent. Set by default.
+	"""
+	APPLY_IP_FILTER
+	"""
+	The torrent's own pause flag: no announces, no connections.
+	Auto-management can resume a paused torrent; prefer the
+	`pauseTorrent`/`resumeTorrent` mutations.
+	"""
+	PAUSED
+	"""
+	Let the queue logic start, pause, and rotate this torrent
+	automatically.
+	"""
+	AUTO_MANAGED
+	"""
+	Treat adding a duplicate torrent as an error. The daemon forces
+	this flag on every add; it has no effect after adding.
+	"""
+	DUPLICATE_IS_ERROR
+	"""
+	Include the torrent in changed-status batches (`torrentChanged`
+	updates and `StateUpdateEvent` batches). Only effective at add
+	time: libtorrent does not honor runtime changes, so
+	`setTorrentFlags` rejects them.
+	"""
+	UPDATE_SUBSCRIBE
+	"""
+	Super-seeding (initial seeding) mode; effective only while the
+	torrent is a seed.
+	"""
+	SUPER_SEEDING
+	"""
+	Prefer downloading pieces in index order. Not a streaming
+	guarantee; piece deadlines serve streaming better.
+	"""
+	SEQUENTIAL_DOWNLOAD
+	"""
+	One-shot: when the torrent is ready to transfer data, clear
+	auto-management, pause it, and clear this flag. Useful for
+	fetching metadata or checking files without starting a transfer.
+	"""
+	STOP_WHEN_READY
+	"""
+	Ephemeral marker that resume data is outdated; normally managed
+	and cleared by the engine's resume persistence.
+	"""
+	NEED_SAVE_RESUME
+	"""
+	Do not announce this torrent to the DHT.
+	"""
+	DISABLE_DHT
+	"""
+	Do not announce this torrent via Local Service Discovery.
+	"""
+	DISABLE_LSD
+	"""
+	Do not exchange peers for this torrent via PEX.
+	"""
+	DISABLE_PEX
+	"""
+	Trust resume data unconditionally, without checking the files on
+	disk. Unsafe when the resume data or files may be stale.
+	"""
+	NO_VERIFY_FILES
+	"""
+	Files without an explicit priority default to priority 0 (don't
+	download); useful for magnets, whose file list is unknown at add
+	time. Only meaningful at add time.
+	"""
+	DEFAULT_DONT_DOWNLOAD
+	"""
+	Treat this as an I2P torrent for the mixed-peer policy; normally
+	inferred from `.i2p` tracker URLs.
+	"""
+	I2P_TORRENT
+	"""
+	For hybrid torrents, validate only v2 hashes. Only meaningful at
+	add time; no effect on v1-only or v2-only torrents.
+	"""
+	DISABLE_V1_HASHES
+}
+
+"""
+A torrent was removed from the session. Disk deletion, if requested,
+completes separately (`TorrentDeletedEvent`).
+"""
+type TorrentRemovedEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+}
+
+"""
+Torrent lifecycle state: the torrent's current primary task.
+"""
+enum TorrentState {
+	"""
+	Checking existing files against the piece hashes.
+	"""
+	CHECKING_FILES
+	"""
+	Downloading metadata (a magnet without its .torrent yet).
+	"""
+	DOWNLOADING_METADATA
+	"""
+	Downloading payload data.
+	"""
+	DOWNLOADING
+	"""
+	All selected (priority-nonzero) files are complete, but not the
+	whole torrent.
+	"""
+	FINISHED
+	"""
+	Every piece is present; seeding.
+	"""
+	SEEDING
+	"""
+	Validating resume data against the files on disk.
+	"""
+	CHECKING_RESUME_DATA
+	"""
+	A state this API version does not recognize.
+	"""
+	UNKNOWN
+}
+
+"""
+One tracker of a torrent.
+"""
+type Tracker {
+	"""
+	The announce URL.
+	"""
+	url: String!
+	"""
+	The tracker-issued tracker id, if it sent one (often empty).
+	"""
+	trackerId: String!
+	"""
+	Failover tier: lower tiers are tried first (unless the
+	`announceToAllTiers`/`announceToAllTrackers` settings widen
+	announcing).
+	"""
+	tier: Int!
+	"""
+	Announce failures after which this tracker is no longer tried;
+	0 means never give up.
+	"""
+	failLimit: Int!
+	"""
+	Whether this tracker has answered an announce.
+	"""
+	verified: Boolean!
+	"""
+	Where this tracker URL came from.
+	"""
+	source: [TrackerSource!]!
+}
+
+"""
+A tracker announce URL with its failover tier.
+"""
+input TrackerInput {
+	"""
+	The announce URL.
+	"""
+	url: String!
+	"""
+	Failover tier to place the tracker in (lower is preferred).
+	"""
+	tier: Int! = 0
+}
+
+"""
+Where a tracker URL came from.
+"""
+enum TrackerSource {
+	"""
+	Part of the .torrent file.
+	"""
+	TORRENT
+	"""
+	Added programmatically.
+	"""
+	CLIENT
+	"""
+	Part of a magnet link.
+	"""
+	MAGNET_LINK
+	"""
+	Received via tracker exchange (TEX).
+	"""
+	TEX
+}
+
+"""
+A tracker-list snapshot. There is no operation to request one
+directly; it is broadcast whenever serving any client's request
+fetches the tracker list (a `Torrent.trackers` selection, or a
+mutation that resolves tracker indexes).
+"""
+type TrackersEvent {
+	"""
+	Session-local torrent id.
+	"""
+	torrentId: Int!
+	"""
+	The torrent's info-hash (v1 preferred).
+	"""
+	infoHash: InfoHash!
+	"""
+	The torrent's trackers, in current tracker order.
+	"""
+	trackers: [Tracker!]!
+}
+
+"""
+Whether one transport is enabled, per connection direction.
+"""
+type TransportDirections {
+	"""
+	Accept incoming connections over this transport.
+	"""
+	incoming: Boolean!
+	"""
+	Make outgoing connections over this transport.
+	"""
+	outgoing: Boolean!
+}
+
+"""
+Whether one transport is enabled, per connection direction.
+"""
+input TransportDirectionsInput {
+	"""
+	Accept incoming connections over this transport.
+	"""
+	incoming: Boolean!
+	"""
+	Make outgoing connections over this transport.
+	"""
+	outgoing: Boolean!
+}
+
+"""
+The user agent identity presented to trackers and peers.
+"""
+enum UserAgent {
+	"""
+	No user agent: an empty user-agent string.
+	"""
+	NONE
+	"""
+	The stock identity of the embedded BitTorrent engine.
+	"""
+	LIBTORRENT
+	"""
+	This daemon's own identity.
+	"""
+	RSBTD
+	"""
+	Impersonates qBittorrent (a fixed, known-good version) for
+	trackers that whitelist specific clients.
+	"""
+	QBITTORRENT
+	"""
+	The effective value was set outside this API (e.g. session state
+	persisted by a different daemon version). Read-only: writing it
+	is rejected.
+	"""
+	UNRECOGNIZED
+}
+
+"""
+Component versions.
+"""
+type VersionInfo {
+	"""
+	The rsbtd daemon version.
+	"""
+	daemon: String!
+	"""
+	The version of the embedded BitTorrent engine.
+	"""
+	libtorrent: String!
+}
+
+"""
+Directs the executor to include this field or fragment only when the `if` argument is true.
+"""
+directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Directs the executor to skip this field or fragment when the `if` argument is true.
+"""
+directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+schema {
+	query: QueryRoot
+	mutation: MutationRoot
+	subscription: SubscriptionRoot
+}
+

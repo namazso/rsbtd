@@ -1,0 +1,23 @@
+{
+  "title": "Statistics",
+  "loading": "Loading metrics…",
+  "loadError": "Failed to load metrics: {{message}}",
+  "back": "Back to torrents",
+  "charts": {
+    "transfer": "Transfer rates",
+    "dht": "DHT",
+    "peers": "Peers & connections",
+    "disk": "Disk",
+    "custom": "Custom metrics"
+  },
+  "noSeries": "None of this chart's metrics exist on this daemon version.",
+  "browser": {
+    "title": "All metrics",
+    "search": "Filter metrics…",
+    "hint": "Select metrics to plot them in the custom chart. Counters are shown as rates per second.",
+    "counter": "counter",
+    "gauge": "gauge",
+    "value": "Value"
+  },
+  "paused": "Sampling paused while the tab is hidden"
+}

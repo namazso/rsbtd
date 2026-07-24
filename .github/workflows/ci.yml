@@ -1,0 +1,668 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+name: CI
+
+# The whole pipeline in one workflow:
+#
+#   test (abi 2/100 × arch)  cpp-test (× arch)  docs  lint  regen-diff  notices
+#     └────────────────────────── gate ──────────────────────────┐
+#   webui ──┬── msi (× arch) ────────────────┬── release         # tag builds (v*) only
+#           ├── rpm (× arch) ──┬─────────────┘
+#           │                  └── publish-image                 # master + tag builds
+#           └── alpine (× arch)                                  # CI-only canary,
+#                                                                # not in the gate
+#
+# Every Linux leg runs natively on both x86_64 (ubuntu-24.04) and
+# aarch64 (ubuntu-24.04-arm) runners -- no cross-compilation, no qemu.
+# The Windows arm64 MSI is the one cross-compiled leg (x64 runner,
+# windows/build.ps1 -Arch arm64): its binaries cannot run on the
+# builder, so that leg skips the test suite and the smoke test -- the
+# natively built legs carry the coverage.
+#
+# The web UI is checked and built exactly once (the `webui` job) and its
+# dist flows as an artifact into the Windows MSIs, the RPMs/OL10 images,
+# and the Alpine images. All canonical builds that can execute their
+# artifacts run the full workspace test suite (msi via
+# windows/build.ps1, rpm via the spec's %check); the Alpine jobs build
+# against the system libtorrent with Alpine's floating rust/gcc and run
+# the suite there too.
+#
+# The per-arch rpm jobs each smoke test their production image and
+# export it as an artifact; publish-image assembles exactly those images
+# into one multi-arch manifest list on ghcr.io/<repo> -- tag builds as
+# :<major>, :<major.minor>, :<version> and :latest, master pushes as
+# :nightly. Tag builds also attach the MSIs and RPMs (both arches each)
+# to the GitHub release (the release job).
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  LLVM_VERSION: 21.1.8
+  CONTAINER_ENGINE: podman
+
+jobs:
+  # Full test suite over the {ABI 2, ABI 100} matrix. ABI 100 builds the
+  # vendored libtorrent with deprecated-functions=OFF, proving the ABI probe
+  # and the >= forward-compat asserts absorb the layout differences.
+  test:
+    name: test (abi=${{ matrix.abi }}, ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        abi: [2, 100]
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libboost-dev libssl-dev
+
+      - name: Configure ABI 100
+        if: matrix.abi == 100
+        run: echo 'CTORRENT_VENDORED_DEPRECATED=OFF' >> "$GITHUB_ENV"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: abi${{ matrix.abi }}-${{ matrix.arch }}
+
+      - name: Build
+        run: cargo build --workspace --features vendored
+
+      - name: Test
+        run: cargo test --workspace --features vendored
+
+      - name: Build examples
+        run: cargo build --examples --features vendored
+
+  # The C++ shim's internal unit test (libctorrent/tests) is not exercised
+  # by the cargo build; build it standalone against a vendored libtorrent
+  # and run it via ctest. The libtorrent build is cached on the submodule
+  # commit, so this leg is cheap after the first run.
+  cpp-test:
+    name: cpp-test (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libboost-dev libssl-dev
+
+      - name: Resolve vendored libtorrent commit
+        id: lt
+        run: echo "sha=$(git -C vendor/libtorrent rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/libtorrent-prefix
+          key: cpp-test-libtorrent-${{ runner.os }}-${{ matrix.arch }}-${{ steps.lt.outputs.sha }}
+
+      - name: Build vendored libtorrent (cache miss only)
+        run: |
+          if [ ! -d "$HOME/libtorrent-prefix" ]; then
+            cmake -S vendor/libtorrent -B build/libtorrent -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DBUILD_SHARED_LIBS=ON \
+              -Dwebtorrent=OFF -Dbuild_tests=OFF -Dbuild_examples=OFF \
+              -Dpython-bindings=OFF \
+              -DCMAKE_INSTALL_PREFIX="$HOME/libtorrent-prefix"
+            cmake --build build/libtorrent
+            cmake --install build/libtorrent
+          fi
+
+      - name: Build and run libctorrent tests
+        run: |
+          cmake -S libctorrent -B build/ctorrent -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCTORRENT_LIBTORRENT_PREFIX="$HOME/libtorrent-prefix" \
+            -DCTORRENT_BUILD_TESTS=ON
+          cmake --build build/ctorrent
+          ctest --test-dir build/ctorrent --output-on-failure
+
+  # Rustdoc must build warning-free.
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libboost-dev libssl-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: docs
+      - name: cargo doc
+        run: cargo doc --workspace --features vendored --no-deps
+        env:
+          RUSTDOCFLAGS: -Dwarnings
+
+  # Clippy must be warning-free and the tree rustfmt-clean (generated files
+  # carry #[rustfmt::skip] and keep their generator's formatting).
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build libboost-dev libssl-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: lint
+      - name: cargo fmt
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --features vendored -- -D warnings
+
+  # The generated-once files must match their generators: re-run the
+  # scripts against the pinned submodule and require a clean tree.
+  regen-diff:
+    name: regen-diff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - name: Regenerate settings and alerts
+        run: |
+          python3 scripts/gen_settings.py
+          python3 scripts/gen_alerts.py
+      - name: Check for drift
+        # git diff catches modified tracked files; the status check catches a
+        # generator creating new untracked files.
+        run: |
+          git diff --exit-code
+          test -z "$(git status --porcelain)" || { git status --porcelain; exit 1; }
+
+  # The checked-in THIRD-PARTY-NOTICES.md (shipped in every RPM, the MSI,
+  # and the container images) must match its generator inputs: Cargo.lock,
+  # webui/package-lock.json, the vendored submodule, and the Boost/OpenSSL
+  # pins. Regenerate and require a byte-identical file.
+  notices:
+    name: notices
+    runs-on: ubuntu-latest
+    steps:
+      # recursive: the generator reads nested submodule licenses
+      # (vendor/libtorrent/deps/try_signal/LICENSE).
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      # npm ci: the generator reads license texts out of webui/node_modules.
+      - name: Install web UI dependencies
+        run: npm ci
+        working-directory: webui
+      - name: Check THIRD-PARTY-NOTICES.md freshness
+        run: python3 scripts/gen_notices.py --check
+
+  # Aggregate quality gate: everything published or released must sit
+  # behind every quality job (webui gates transitively through msi/rpm).
+  # alpine is deliberately excluded -- it is a canary that may break
+  # with zero repo changes when edge moves.
+  gate:
+    name: gate
+    needs: [test, cpp-test, docs, lint, regen-diff, notices]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: 'true'
+
+  # The web UI, checked and built once. The dist artifact is the single
+  # source of truth consumed by the msi, rpm, and alpine jobs.
+  webui:
+    name: webui
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: webui
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      - name: Codegen
+        run: npm run codegen
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+          if-no-files-found: error
+
+  # Windows MSI: pinned LLVM + Rust (matching packaging/) for full
+  # cross-language LTO via windows/build.ps1. The x64 leg builds
+  # natively, runs the full workspace test suite before packaging, and
+  # smoke tests the installer. The arm64 leg cross-compiles on the same
+  # x64 runner (the script skips tests and cannot smoke test; NASM is
+  # not needed, clang-cl assembles OpenSSL's aarch64 perlasm).
+  msi:
+    name: build msi (${{ matrix.arch }})
+    runs-on: windows-latest
+    needs: webui
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+
+      # Only tooling GitHub's image does not provide (or where we need an
+      # exact version): LLVM, NASM, the pinned Rust toolchain, WiX.
+      # VS Build Tools (incl. the ARM64 toolset), CMake, Ninja, and Perl
+      # come with the runner.
+      - name: Install LLVM ${{ env.LLVM_VERSION }}
+        shell: pwsh
+        run: |
+          $url = "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/LLVM-$env:LLVM_VERSION-win64.exe"
+          (New-Object System.Net.WebClient).DownloadFile($url, "$env:TEMP\llvm.exe")
+          Start-Process "$env:TEMP\llvm.exe" -ArgumentList '/S' -Wait
+          # Ahead of VS's bundled clang so the pinned one wins.
+          "C:\Program Files\LLVM\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+
+      - name: Install NASM
+        if: matrix.arch == 'x64'
+        run: choco install nasm -y --no-progress
+
+      - name: Add NASM to PATH
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: '"C:\Program Files\NASM" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH'
+
+      - name: Install Rust toolchain (rust-toolchain.toml)
+        shell: pwsh
+        run: |
+          rustup toolchain install
+          rustup show active-toolchain
+
+      - name: Add the aarch64 Rust target
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        run: rustup target add aarch64-pc-windows-msvc
+
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 7.0.0
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows-msi-${{ matrix.arch }}
+
+      - name: Cache Boost + OpenSSL
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist/windows/boost
+            dist/windows/openssl
+            dist/windows/openssl-arm64
+          key: windows-deps-${{ matrix.arch }}-boost1.88.0-openssl3.5.7-llvm${{ env.LLVM_VERSION }}
+
+      - name: Build and test
+        shell: pwsh
+        run: windows\build.ps1 -WebUiDist webui\dist -Arch ${{ matrix.arch }}
+
+      - name: Smoke test
+        if: matrix.arch == 'x64'
+        shell: pwsh
+        run: windows\smoke-test.ps1 -Msi (Get-ChildItem dist\windows\*.msi | Select-Object -First 1 -ExpandProperty FullName)
+
+      - name: Collect smoke logs
+        if: failure() && matrix.arch == 'x64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs
+          path: |
+            dist/windows/smoke-logs
+            ~/AppData/Local/rsbtd/logs
+          if-no-files-found: ignore
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: msi-${{ matrix.arch }}
+          path: dist/windows/*.msi
+          if-no-files-found: error
+
+  # Containerized RPM + image build, reusing packaging/build-rpm.sh (the
+  # same script used locally): OL10 builder container, clang/lld 21.1.8 +
+  # Rust 1.94.0, vendored libtorrent, fat cross-language LTO, full test
+  # suite in %check, web UI in the rsbtd-webui subpackage. One native
+  # leg per architecture; the smoke-tested images flow into
+  # publish-image as artifacts.
+  rpm:
+    name: build rpms (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: webui
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+
+      - name: Ensure podman
+        run: |
+          command -v podman >/dev/null || {
+            sudo apt-get update && sudo apt-get install -y podman
+          }
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: dist/cargo-cache
+          key: rpm-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rpm-cargo-
+
+      - name: Snapshot release suffix (non-tag builds)
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        # run_number is monotonic per workflow (a commit count would need
+        # full history, and the checkout is shallow), so successive
+        # snapshot RPMs upgrade cleanly; 0.* sorts below the tag builds'
+        # release 1.
+        run: |
+          echo "RSBTD_RPM_RELEASE=0.${{ github.run_number }}.g$(git rev-parse --short HEAD)" \
+            >> "$GITHUB_ENV"
+
+      - name: Build RPMs
+        run: packaging/build-rpm.sh
+
+      - name: Build production image
+        run: packaging/build-image.sh
+        env:
+          RSBTD_IMAGE: localhost/rsbtd:ci
+
+      - name: Smoke test production image
+        run: |
+          # Without RSBTD_TOKEN (and no mounted config) the container
+          # must refuse to start instead of running with a known token.
+          if podman run --rm --name rsbtd-notoken localhost/rsbtd:ci; then
+            echo "container started without a token" >&2; exit 1
+          fi
+          podman run -d --name rsbtd-smoke -p 127.0.0.1:3928:3928 \
+            -e RSBTD_TOKEN=ci-smoke-token localhost/rsbtd:ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3928/healthz; then ok=1; break; fi
+            sleep 1
+          done
+          podman logs rsbtd-smoke
+          [ "${ok:-}" = 1 ]
+          podman exec rsbtd-smoke rsbtctl --url http://127.0.0.1:3928 \
+            --token ci-smoke-token version
+          curl -fsS http://127.0.0.1:3928/ | grep -qi '<!doctype html>'
+          podman stop -t 45 rsbtd-smoke
+
+      # Hand the exact image that passed the smoke test to publish-image
+      # (as an artifact, so nothing unverified ever reaches the registry
+      # and no per-arch tags pollute it).
+      - name: Export smoke-tested image
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          github.ref == 'refs/heads/master'
+        run: |
+          podman tag localhost/rsbtd:ci localhost/rsbtd:ci-${{ matrix.arch }}
+          podman save -o /tmp/rsbtd-image-${{ matrix.arch }}.tar \
+            localhost/rsbtd:ci-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        if: >-
+          startsWith(github.ref, 'refs/tags/v') ||
+          github.ref == 'refs/heads/master'
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp/rsbtd-image-${{ matrix.arch }}.tar
+          if-no-files-found: error
+
+      # The noarch webui RPM and the SRPM are identical across legs and
+      # ship from the x86_64 one only.
+      - name: Drop noarch/SRPM from non-x86_64 legs
+        if: matrix.arch != 'x86_64'
+        run: rm -f dist/rpms/*.noarch.rpm dist/rpms/*.src.rpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpms-${{ matrix.arch }}
+          path: |
+            dist/rpms/*.rpm
+          if-no-files-found: error
+
+  # Assemble the per-arch smoke-tested images into one multi-arch
+  # manifest list on ghcr.io: tag builds as :<major>, :<major.minor>,
+  # :<version> and :latest, master builds as :nightly. Only images that
+  # passed their arch's smoke test exist as artifacts, so only those can
+  # be published.
+  publish-image:
+    name: publish image
+    if: >-
+      startsWith(github.ref, 'refs/tags/v') ||
+      github.ref == 'refs/heads/master'
+    needs: [rpm, gate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # Gate for every tag publication (the release job needs this one):
+      # binaries report the workspace version, so a tag naming any other
+      # version would publish mislabeled artifacts.
+      - name: Check the tag against the workspace version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          workspace_version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
+          webui_version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' webui/package.json | head -n1)"
+          if [[ "$tag_version" != "$workspace_version" || "$tag_version" != "$webui_version" ]]; then
+            echo "tag v$tag_version does not match workspace $workspace_version / webui $webui_version" >&2
+            exit 1
+          fi
+
+      - name: Ensure podman
+        run: |
+          command -v podman >/dev/null || {
+            sudo apt-get update && sudo apt-get install -y podman
+          }
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: image-*
+          path: images
+
+      - name: Push multi-arch manifest to ghcr.io
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | podman login ghcr.io -u '${{ github.actor }}' --password-stdin
+          for archive in images/*/*.tar; do
+            podman load -i "$archive"
+          done
+          podman manifest create rsbtd-multiarch
+          for a in x86_64 aarch64; do
+            podman manifest add rsbtd-multiarch "containers-storage:localhost/rsbtd:ci-$a"
+          done
+          image="ghcr.io/${{ github.repository }}"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"        # 1.2.3
+            tags=("$version" "${version%.*}" "${version%%.*}" latest)
+          else
+            tags=(nightly)
+          fi
+          for t in "${tags[@]}"; do
+            podman manifest push --all rsbtd-multiarch "docker://$image:$t"
+          done
+
+  # CI-only canary, not part of the release: system libtorrent (>= 2.1,
+  # from alpine:edge), Alpine's floating rust/cargo, default gcc, no LTO,
+  # no toolchain pin -- the deliberate opposite corner from the pinned
+  # builds. The builder stage runs the full test suite; the image serves
+  # the web UI like the OL10 one. May break with zero repo changes when
+  # edge moves -- that early-warning role is intentional.
+  alpine:
+    name: alpine image (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    needs: webui
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: x86_64
+          - runner: ubuntu-24.04-arm
+            arch: aarch64
+    steps:
+      # no submodules: this build uses the system libtorrent
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: webui-dist
+          path: webui/dist
+
+      - name: Ensure podman
+        run: |
+          command -v podman >/dev/null || {
+            sudo apt-get update && sudo apt-get install -y podman
+          }
+
+      - name: Build Alpine image (compiles + full test suite)
+        run: packaging/build-alpine.sh
+        env:
+          RSBTD_ALPINE_IMAGE: localhost/rsbtd:alpine-ci
+
+      - name: Smoke test
+        run: |
+          # Without RSBTD_TOKEN (and no mounted config) the container
+          # must refuse to start instead of running with a known token.
+          if podman run --rm --name rsbtd-notoken localhost/rsbtd:alpine-ci; then
+            echo "container started without a token" >&2; exit 1
+          fi
+          podman run -d --name rsbtd-smoke -p 127.0.0.1:3928:3928 \
+            -e RSBTD_TOKEN=ci-smoke-token localhost/rsbtd:alpine-ci
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3928/healthz; then ok=1; break; fi
+            sleep 1
+          done
+          podman logs rsbtd-smoke
+          [ "${ok:-}" = 1 ]
+          podman exec rsbtd-smoke rsbtctl --url http://127.0.0.1:3928 \
+            --token ci-smoke-token version
+          curl -fsS http://127.0.0.1:3928/ | grep -qi '<!doctype html>'
+          podman stop -t 45 rsbtd-smoke
+
+  # Tag builds (v*): attach the MSIs and the RPMs (both arches each) to
+  # the GitHub release.
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [msi, rpm, publish-image, gate]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # merge-multiple: the per-arch MSIs have distinct filenames
+      # (rsbtd-<version>-<arch>.msi).
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: msi-*
+          path: dist/windows
+          merge-multiple: true
+
+      # merge-multiple: filenames are disjoint -- arch-suffixed RPMs per
+      # leg, the noarch webui RPM and the SRPM from x86_64 only.
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rpms-*
+          path: dist/rpms
+          merge-multiple: true
+
+      - name: Upload the MSI and RPMs to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag --generate-notes
+          fi
+          gh release upload "$tag" dist/windows/*.msi dist/rpms/*.rpm --clobber

@@ -1,0 +1,33 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Local development config for the rsbtd daemon behind `npm run dev`.
+#
+# From the repository root (needs a C++ toolchain, CMake >= 3.25, Boost,
+# OpenSSL for the vendored libtorrent build):
+#
+#   cargo run --release --features vendored -p rsbtd -- --config webui/dev/rsbtd.dev.toml
+#
+# or with a prebuilt binary:
+#
+#   rsbtd --config webui/dev/rsbtd.dev.toml
+
+# Writable directory for resume data and session state.
+state_dir = "/tmp/rsbtd-dev-state"
+
+[api]
+# The Vite dev server targets this address directly (override with RSBTD_URL).
+listen = "127.0.0.1:3928"
+
+# Allow the Vite dev server origin to call the API from the browser.
+cors = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
+# No `token` -> authentication disabled for local development.
+# Uncomment to exercise the login flow:
+#token = "dev-token"
+
+# GraphiQL IDE on http://127.0.0.1:3928/ for exploring the schema.
+graphiql = true

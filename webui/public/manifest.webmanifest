@@ -1,0 +1,17 @@
+{
+  "name": "rsbtd",
+  "short_name": "rsbtd",
+  "description": "Web UI for the rsbtd BitTorrent daemon",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#191b20",
+  "theme_color": "#191b20",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

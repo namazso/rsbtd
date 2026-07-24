@@ -1,0 +1,100 @@
+/* Copyright (C) 2026  namazso <admin@namazso.eu>
+ * SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/.
+ */
+
+@import 'tailwindcss';
+
+/* Class-based dark mode: the ThemeApplier toggles `dark` on <html>,
+   defaulting to the system preference. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  color-scheme: light;
+  --background: oklch(0.985 0.002 250);
+  --foreground: oklch(0.21 0.01 250);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.955 0.004 250);
+  --muted-foreground: oklch(0.5 0.012 250);
+  --border: oklch(0.9 0.006 250);
+  --primary: oklch(0.55 0.17 255);
+  --primary-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.55 0.19 27);
+  --accent: oklch(0.94 0.008 250);
+  --ring: oklch(0.55 0.17 255);
+  --selected: oklch(0.93 0.035 255);
+
+  /* torrent status hues (icons, progress fills) */
+  --st-download: oklch(0.55 0.15 250);
+  --st-seed: oklch(0.56 0.13 150);
+  --st-pause: oklch(0.62 0.015 250);
+  --st-error: oklch(0.55 0.19 27);
+  --st-check: oklch(0.62 0.12 85);
+}
+
+.dark {
+  color-scheme: dark;
+  --background: oklch(0.18 0.008 255);
+  --foreground: oklch(0.92 0.005 250);
+  --card: oklch(0.22 0.009 255);
+  --muted: oklch(0.25 0.01 255);
+  --muted-foreground: oklch(0.65 0.012 250);
+  --border: oklch(0.31 0.012 255);
+  --primary: oklch(0.62 0.16 255);
+  --primary-foreground: oklch(0.16 0.01 255);
+  --destructive: oklch(0.62 0.18 27);
+  --accent: oklch(0.28 0.012 255);
+  --ring: oklch(0.62 0.16 255);
+  --selected: oklch(0.34 0.055 255);
+
+  --st-download: oklch(0.66 0.14 250);
+  --st-seed: oklch(0.66 0.13 150);
+  --st-pause: oklch(0.58 0.015 250);
+  --st-error: oklch(0.64 0.17 27);
+  --st-check: oklch(0.7 0.12 85);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-accent: var(--accent);
+  --color-ring: var(--ring);
+  --color-selected: var(--selected);
+  --color-st-download: var(--st-download);
+  --color-st-seed: var(--st-seed);
+  --color-st-pause: var(--st-pause);
+  --color-st-error: var(--st-error);
+  --color-st-check: var(--st-check);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+}
+
+/* Thin scrollbars for dense desktop panes. Kept in the base layer so the
+   `scrollbar-none` utility (utilities layer) can override it — an unlayered
+   rule here would outrank the utility and leave scrollbars visible. */
+@layer base {
+  * {
+    scrollbar-width: thin;
+  }
+}
+
+/* Chip rows and other horizontal strips hide their scrollbar entirely. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

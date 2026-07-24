@@ -1,0 +1,39 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[Unit]
+Description=rsbtd torrent daemon
+Documentation=https://github.com/namazso/rsbtd
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+ExecStart=/usr/local/bin/rsbtd --config /etc/rsbtd/rsbtd.toml
+Restart=on-failure
+
+# SIGTERM triggers a graceful shutdown (resume-data flush, tracker
+# goodbyes); give it time before SIGKILL.
+TimeoutStopSec=45
+
+User=rsbtd
+Group=rsbtd
+StateDirectory=rsbtd
+RuntimeDirectory=rsbtd
+
+# Hardening. Adjust ReadWritePaths to your download locations.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/rsbtd
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

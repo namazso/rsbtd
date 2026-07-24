@@ -1,0 +1,48 @@
+{
+  "title": "Create torrent",
+  "back": "Back to torrents",
+  "form": {
+    "sourcePath": "Source file or directory (on the daemon host)",
+    "pieceSize": "Piece size",
+    "pieceAuto": "Automatic",
+    "format": "Format",
+    "hybrid": "Hybrid (v1 + v2)",
+    "v1Only": "v1 only",
+    "v2Only": "v2 only",
+    "private": "Private torrent (BEP 27)",
+    "comment": "Comment",
+    "creator": "Created by",
+    "trackers": "Trackers (one per line; optional leading tier number, e.g. \"1 udp://…\")",
+    "urlSeeds": "HTTP/web seeds (one per line)",
+    "outputPath": "Output path on the daemon (optional — otherwise download the result here)",
+    "flags": "Options",
+    "flag": {
+      "MODIFICATION_TIME": "Include file modification times",
+      "SYMLINKS": "Store symlinks as symlinks",
+      "CANONICAL_FILES": "Canonical file order and padding (BEP 52)",
+      "CANONICAL_FILES_NO_TAIL_PADDING": "Canonical files without tail padding",
+      "NO_ATTRIBUTES": "Skip file attributes"
+    },
+    "submit": "Start",
+    "sourceRequired": "A source path is required"
+  },
+  "jobs": {
+    "title": "Creation jobs",
+    "empty": "No creation jobs (finished jobs are pruned after about an hour)",
+    "job": "Job #{{id}}",
+    "state": {
+      "LISTING": "Listing files",
+      "HASHING": "Hashing",
+      "FINISHED": "Finished",
+      "FAILED": "Failed",
+      "CANCELLED": "Cancelled"
+    },
+    "pieces": "{{done}} / {{total}} pieces",
+    "writtenTo": "Written to {{path}}",
+    "cancel": "Cancel",
+    "cancelHint": "Hashing cannot be interrupted mid-run; the result is discarded.",
+    "download": "Download .torrent",
+    "addToSession": "Add to session",
+    "dataGone": "The job's .torrent is no longer available"
+  }
+}

@@ -1,0 +1,86 @@
+{
+  "app": {
+    "name": "rsbtd"
+  },
+  "actions": {
+    "close": "Close",
+    "cancel": "Cancel",
+    "ok": "OK",
+    "apply": "Apply",
+    "reset": "Reset",
+    "logout": "Log out"
+  },
+  "boolean": {
+    "yes": "Yes",
+    "no": "No"
+  },
+  "connection": {
+    "idle": "Idle",
+    "probing": "Connecting…",
+    "authRequired": "Login required",
+    "connecting": "Connecting…",
+    "up": "Connected",
+    "degraded": "Live updates unavailable — polling",
+    "down": "Daemon unreachable"
+  },
+  "columnsMenu": {
+    "sortAsc": "Sort ascending",
+    "sortDesc": "Sort descending",
+    "sortClear": "Clear sort",
+    "hide": "Hide column",
+    "moveLeft": "Move left",
+    "moveRight": "Move right",
+    "columns": "Columns",
+    "reset": "Reset columns"
+  },
+  "clipboard": {
+    "copied": "Copied to clipboard",
+    "failed": "Copy failed"
+  },
+  "statusbar": {
+    "torrents_one": "{{count}} torrent",
+    "torrents_other": "{{count}} torrents",
+    "dht": "DHT: {{count}} nodes",
+    "listening": "Listening on port {{port}}",
+    "notListening": "Not listening for peers",
+    "sessionPaused": "Session paused",
+    "version": "rsbtd {{daemon}} · libtorrent {{libtorrent}}"
+  },
+  "theme": {
+    "system": "System theme",
+    "light": "Light theme",
+    "dark": "Dark theme"
+  },
+  "units": {
+    "d": "d",
+    "h": "h",
+    "m": "m",
+    "s": "s"
+  },
+  "placeholder": {
+    "empty": "—",
+    "infinity": "∞"
+  },
+  "events": {
+    "finished": "{{name}} finished",
+    "torrentError": "{{name}}: {{message}}",
+    "metadataFailed": "Metadata download failed for {{name}}: {{message}}",
+    "deleted": "Deleted files of {{name}}",
+    "deleteFailed": "Failed to delete files of {{name}}: {{message}}",
+    "storageMoveFailed": "Moving {{name}} failed: {{message}}"
+  },
+  "nav": {
+    "torrents": "Torrents",
+    "stats": "Statistics",
+    "settings": "Settings"
+  },
+  "notFound": {
+    "title": "Not found",
+    "torrent": "Torrent {{hash}} is not in the session"
+  },
+  "pages": {
+    "settings": "Settings",
+    "stats": "Statistics",
+    "create": "Create torrent"
+  }
+}

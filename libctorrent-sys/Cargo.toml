@@ -1,0 +1,23 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[package]
+name = "libctorrent-sys"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+repository.workspace = true
+description = "Raw FFI bindings to libctorrent, a C interface for libtorrent-rasterbar"
+links = "ctorrent"
+
+[features]
+# Build libtorrent 2.1 from vendor/libtorrent instead of using the system
+# library, and link it statically into the Rust binary.
+vendored = []
+
+[build-dependencies]
+cmake = "0.1"
+bindgen = "0.72"

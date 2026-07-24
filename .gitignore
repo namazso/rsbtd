@@ -1,0 +1,14 @@
+/target
+# separate target dir for the ABI-100 test leg
+/target-abi100
+# packaging outputs (RPMs, rpmbuild topdir, cargo cache, image context);
+# unanchored: a relative CARGO_TARGET_DIR pointing into dist/ spawns
+# nested copies under crate directories (e.g. via trybuild)
+dist/
+/tmp
+# local copy of .cargo/config.sample.toml (LTO setup)
+/.cargo/config.toml
+# web UI
+/webui/node_modules
+/webui/dist
+/webui/src/gen

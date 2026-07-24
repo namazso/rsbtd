@@ -1,0 +1,10 @@
+error[E0499]: cannot borrow `*alerts` as mutable more than once at a time
+  --> tests/ui/alert_outlives_pop.rs:12:19
+   |
+10 |     let batch = alerts.next_batch().await.unwrap();
+   |                 ------ first mutable borrow occurs here
+11 |     let first = batch.get(0);
+12 |     let _batch2 = alerts.next_batch().await.unwrap();
+   |                   ^^^^^^ second mutable borrow occurs here
+13 |     drop(first);
+   |          ----- first borrow later used here

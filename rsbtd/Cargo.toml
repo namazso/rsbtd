@@ -1,0 +1,77 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+[package]
+name = "rsbtd"
+version.workspace = true
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+description = "Torrent client daemon with a GraphQL API, built on rbtorrent"
+
+[features]
+vendored = ["rbtorrent/vendored"]
+
+[dependencies]
+rbtorrent = { path = "../rbtorrent" }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "signal",
+    "net",
+    "fs",
+] }
+axum = { version = "0.8", features = ["ws"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tower-http = { version = "0.6", features = ["cors", "fs", "limit"] }
+async-graphql = "7.2"
+async-graphql-axum = "7.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+base64 = "0.22"
+hex = "0.4"
+subtle = "2"
+sha2 = "0.10"
+
+# The unix-y entry point (config file path via CLI).
+[target.'cfg(not(windows))'.dependencies]
+clap = { version = "4", features = ["derive"] }
+
+# The Windows tray app (raw Win32; config in the registry).
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_System_Console",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Shutdown",
+    "Win32_System_Threading",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-registry = "0.6"
+tracing-appender = "0.2"
+percent-encoding = "2"
+# First-start API token generation (OS CSPRNG).
+getrandom = "0.3"
+
+[build-dependencies]
+winresource = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+tempfile = "3"
+tokio-tungstenite = "0.24"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+http-body-util = "0.1"
+futures-util = "0.3"

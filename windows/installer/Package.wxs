@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copyright (C) 2026  namazso <admin@namazso.eu>
+  SPDX-License-Identifier: MPL-2.0
+  This Source Code Form is subject to the terms of the Mozilla Public
+  License, v. 2.0. If a copy of the MPL was not distributed with this
+  file, You can obtain one at http://mozilla.org/MPL/2.0/.
+-->
+
+<!--
+  Per-user MSI for the rsbtd tray app. Built by windows\build.ps1, which
+  supplies ProductVersion, StageDir (rsbtd.exe, rsbtctl.exe), WebUiDist
+  (the built web UI tree, harvested by the Files wildcard below),
+  IconPath, LicenseRtf, NoticesPath (THIRD-PARTY-NOTICES.md), and
+  LicensePath.
+
+  The installer only lays down files. All per-user state is owned by
+  rsbtd.exe itself: it generates the API token on its first start, asks
+  whether to enable autostart, and keeps its config under
+  HKCU\Software\rsbtd (schema in rsbtd/src/windows/mod.rs). Uninstall
+  touches neither that key nor the autostart Run value, so a reinstall
+  finds the previous token, settings, and autostart choice intact (the
+  Run value points at a fixed per-user path a reinstall reoccupies).
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="rsbtd"
+           Manufacturer="the rsbtd authors"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="7f0da72e-b26e-49a4-9412-6b81b3a1a71b"
+           Scope="perUser"
+           Compressed="yes">
+    <!-- The x64 and arm64 packages share this UpgradeCode; scanning
+         equal versions too means installing either one replaces
+         whatever is already there instead of coexisting in the same
+         folder. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of rsbtd is already installed."
+                  AllowSameVersionUpgrades="yes" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="RsbtdIco" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="RsbtdIco" />
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="$(var.LicenseRtf)" />
+
+    <!-- Close the running tray app for upgrades/uninstall: its hidden
+         top-level window handles WM_CLOSE with a graceful engine stop
+         (45s cap mirrors the systemd unit's TimeoutStopSec). -->
+    <util:CloseApplication Id="CloseRsbtd" Target="rsbtd.exe"
+                           CloseMessage="yes" RebootPrompt="no"
+                           TerminateProcess="1" Timeout="45" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsDir" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="rsbtd">
+          <Directory Id="WebUiFolder" Name="webui" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <!-- Plain file components throughout: default file keypaths and
+         WiX-generated GUIDs (stable, derived from the install path). -->
+    <Feature Id="Main">
+      <Component Directory="INSTALLFOLDER">
+        <File Id="RsbtdExe" Source="$(var.StageDir)\rsbtd.exe">
+          <!-- The app lives under LocalAppData and would otherwise be
+               discoverable only through the tray icon (whose autostart
+               the user may have declined). -->
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder"
+                    Name="rsbtd" Icon="RsbtdIco" Advertise="no" />
+        </File>
+        <!-- Installer-created component directories clean themselves up;
+             ProgramsDir holds no components, so it needs an explicit row
+             for the case where this install created it. -->
+        <RemoveFolder Id="CleanProgramsDir" Directory="ProgramsDir"
+                      On="uninstall" />
+      </Component>
+      <Component Directory="INSTALLFOLDER">
+        <File Source="$(var.StageDir)\rsbtctl.exe" />
+      </Component>
+      <Component Directory="INSTALLFOLDER">
+        <File Source="$(var.NoticesPath)" />
+      </Component>
+      <!-- The notices file refers readers to LICENSE for the project's
+           own terms, so the license text ships next to it. -->
+      <Component Directory="INSTALLFOLDER">
+        <File Name="LICENSE" Source="$(var.LicensePath)" />
+      </Component>
+      <Files Directory="WebUiFolder" Include="$(var.WebUiDist)\**" />
+    </Feature>
+
+    <!-- Start the tray app when the install, upgrade, or repair
+         finishes: CloseApplication runs unconditionally (any maintenance
+         may replace files in use), so a repair would otherwise leave the
+         app closed for good. Uninstall (REMOVE) is the one flow that
+         must not relaunch; the old product's removal leg inside an
+         upgrade carries REMOVE=ALL too, and the new product's install
+         does the launching. The util CA binary must match the MSI
+         platform (wix build -arch). -->
+    <Property Id="WixShellExecTarget" Value="[#RsbtdExe]" />
+    <?if $(sys.BUILDARCH) = "arm64" ?>
+      <CustomAction Id="LaunchApp" BinaryRef="Wix4UtilCA_A64"
+                    DllEntry="WixShellExec" Impersonate="yes" />
+    <?else?>
+      <CustomAction Id="LaunchApp" BinaryRef="Wix4UtilCA_X64"
+                    DllEntry="WixShellExec" Impersonate="yes" />
+    <?endif?>
+    <InstallExecuteSequence>
+      <Custom Action="LaunchApp" After="InstallFinalize"
+              Condition="NOT REMOVE" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>

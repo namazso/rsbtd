@@ -1,0 +1,85 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# CI-only Alpine image: rsbtd + rsbtctl against the SYSTEM
+# libtorrent-rasterbar (>= 2.1, shared), built with Alpine's current
+# rust/cargo and the default gcc toolchain -- no vendored sources, no
+# pinned toolchain, no LTO. Proves the system-libtorrent discovery path
+# and latest-rustc compatibility; the builder stage runs the full test
+# suite. Everything here floats with edge (rust, libtorrent, libclang),
+# so this build can break with zero repo changes -- that early-warning
+# canary role is intentional. Pin to alpine:3.x once libtorrent >= 2.1
+# lands in a release if the churn ever outweighs the signal.
+#
+# Context staged by packaging/build-alpine.sh:
+#   source/      git-tracked tree (minus vendor/, rust-toolchain.toml)
+#   webui-dist/  built web UI
+FROM docker.io/library/alpine:edge AS build
+
+# build-base: gcc/g++/musl-dev/make (the cmake crate's default generator
+# is make -- no ninja needed). boost-dev/openssl-dev: headers
+# libtorrent's CMake config expects when the shim configures against
+# libtorrent-rasterbar-dev. clang-libclang is only bindgen's parser --
+# the compilers are still the default gcc (bindgen 0.72 handles
+# libclang 22; 0.71 needed a clang21 pin here).
+RUN apk add --no-cache \
+        build-base cmake pkgconf \
+        rust cargo \
+        libtorrent-rasterbar-dev boost-dev openssl-dev \
+        clang-libclang
+
+WORKDIR /src
+COPY source/ .
+
+# The workspace release profile carries debug = true; strip via cargo.
+ENV CARGO_PROFILE_RELEASE_STRIP=symbols
+
+# Bounded parallelism (build-alpine.sh: CARGO_BUILD_JOBS) for
+# memory-constrained local hosts, especially emulated cross builds;
+# empty means cargo's default (all cores). CI leaves it unset.
+ARG JOBS=
+
+# Belt and braces: apk's cargo has no rustup shim and ignores the
+# toolchain pin, and build-alpine.sh already filters the file out.
+RUN rm -f rust-toolchain.toml \
+    && cargo build ${JOBS:+--jobs "$JOBS"} --release --locked -p rsbtd -p rsbtctl
+
+# Full test suite, --release to share the artifacts just built (no LTO
+# here, so per-binary link cost is normal). trybuild expectations are
+# recorded against the pinned rustc and drift on edge's newer one.
+# SKIP_TESTS=1 (build-alpine.sh: RSBTD_ALPINE_SKIP_TESTS=1) is for slow
+# qemu-emulated local cross builds only -- CI always runs the suite.
+ARG SKIP_TESTS=0
+RUN [ "$SKIP_TESTS" = 1 ] || RSBTD_SKIP_TRYBUILD=1 cargo test ${JOBS:+--jobs "$JOBS"} --release --workspace --locked
+
+# ---------------------------------------------------------------------
+FROM docker.io/library/alpine:edge
+
+RUN apk add --no-cache libtorrent-rasterbar libstdc++ ca-certificates \
+    && addgroup -S rsbtd \
+    && adduser -S -D -H -G rsbtd -h /var/lib/rsbtd -s /sbin/nologin \
+        -g "rsbtd torrent daemon" rsbtd \
+    && install -d -m 0750 -o rsbtd -g rsbtd /var/lib/rsbtd
+
+COPY --from=build /src/target/release/rsbtd /src/target/release/rsbtctl /usr/bin/
+# Same path the RPM's %license lands at in the OL10 image.
+COPY --from=build /src/LICENSE /src/THIRD-PARTY-NOTICES.md /usr/share/licenses/rsbtd/
+# No baked-in config: the entrypoint generates one from RSBTD_TOKEN
+# (required) unless the operator mounts /etc/rsbtd/rsbtd.toml.
+COPY --from=build /src/packaging/container-entrypoint.sh /usr/local/bin/rsbtd-entrypoint
+# holds the generated config (contains the token: owner-only)
+RUN install -d -m 0700 -o rsbtd -g rsbtd /run/rsbtd
+# Same path as the rsbtd-webui RPM, so the entrypoint-generated config's
+# serve_root works in both images.
+COPY webui-dist/ /usr/share/rsbtd/webui/
+
+# 3928: HTTP API + web UI. 6881: peer listen port, TCP plus uTP/DHT on
+# UDP -- libtorrent's default listen_interfaces.
+EXPOSE 3928 6881 6881/udp
+VOLUME /var/lib/rsbtd
+USER rsbtd
+ENTRYPOINT ["/usr/local/bin/rsbtd-entrypoint"]
+CMD []

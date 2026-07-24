@@ -1,0 +1,4 @@
+dist
+src/gen
+package-lock.json
+schema.graphql

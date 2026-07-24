@@ -1,0 +1,3 @@
+# Test fixtures are byte-exact inputs (bencoded metadata and hashed
+# payload files); any EOL conversion corrupts them.
+rbtorrent/tests/fixtures/** -text

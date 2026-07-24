@@ -1,0 +1,61 @@
+# Copyright (C) 2026  namazso <admin@namazso.eu>
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+# Production image for rsbtd. The only build inputs are the RPMs (rsbtd,
+# rsbtctl, and rsbtd-webui with the prebuilt web UI, served on GET /)
+# plus the entrypoint script, staged into the build context by
+# packaging/build-image.sh -- nothing is compiled here.
+#
+# The image ships no config: the entrypoint generates one from
+# RSBTD_TOKEN (required) and RSBTD_LISTEN, unless the operator mounts
+# /etc/rsbtd/rsbtd.toml. A baked-in default token would be a universal
+# credential for every deployment.
+#
+# Run:
+#   podman run -d --name rsbtd --stop-timeout 45 \
+#       -p 127.0.0.1:3928:3928 -p 6881:6881 -p 6881:6881/udp \
+#       -e RSBTD_TOKEN=<secret> \
+#       -v rsbtd-state:/var/lib/rsbtd rsbtd
+#
+# SIGTERM triggers a graceful shutdown (resume-data flush, tracker
+# goodbyes); give it headroom with --stop-timeout.
+FROM container-registry.oracle.com/os/oraclelinux:10-slim
+
+# Plain rpm install: microdnf cannot install local files, and the slim
+# base already carries every runtime dependency (openssl-libs, libstdc++,
+# shadow-utils for the user scriptlet) -- rpm verifies that claim and
+# fails the image build if a new dependency ever appears. No network.
+#
+# The rsbtd user is created here with a pinned UID/GID (the value is
+# arbitrary, its stability is the point) instead of letting the RPM's
+# sysusers allocation pick one: the /var/lib/rsbtd volume keeps numeric
+# ownership across image upgrades, so a dynamically allocated id that
+# came out differently in a rebuilt image would lose access to the
+# existing state. The RPM's sysusers/%pre see the user exists and no-op.
+COPY rpms/*.rpm /tmp/rpms/
+RUN groupadd -r -g 947 rsbtd \
+    && useradd -r -u 947 -g rsbtd -d /var/lib/rsbtd -s /usr/sbin/nologin \
+        -c "rsbtd torrent daemon" rsbtd \
+    && rpm -Uvh /tmp/rpms/*.rpm \
+    && rm -rf /tmp/rpms \
+    && chown rsbtd:rsbtd /var/lib/rsbtd && chmod 0750 /var/lib/rsbtd \
+    # the RPM installs /etc/rsbtd/rsbtd.toml with a change-me token;
+    # this image must not ship any token, so drop it (the entrypoint
+    # generates a config from RSBTD_TOKEN instead)
+    && rm -f /etc/rsbtd/rsbtd.toml \
+    # holds the generated config (contains the token: owner-only)
+    && install -d -m 0700 -o rsbtd -g rsbtd /run/rsbtd
+
+COPY container-entrypoint.sh /usr/local/bin/rsbtd-entrypoint
+
+# 3928: HTTP API + web UI. 6881: peer listen port, TCP plus uTP/DHT on
+# UDP -- libtorrent's default listen_interfaces; changing the port via
+# the settings API needs a matching -p mapping.
+EXPOSE 3928 6881 6881/udp
+VOLUME /var/lib/rsbtd
+USER rsbtd
+ENTRYPOINT ["/usr/local/bin/rsbtd-entrypoint"]
+CMD []
