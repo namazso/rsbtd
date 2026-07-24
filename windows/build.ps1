@@ -174,6 +174,14 @@ if ($LASTEXITCODE -ne 0) { throw 'openssl build failed' }
 # ---- the LTO build environment ----------------------------------------------
 $env:CC = 'clang-cl'
 $env:CXX = 'clang-cl'
+# Cargo build scripts that compile C through cc-rs (ring) archive their
+# objects themselves, and with -flto=full those are LLVM bitcode, which
+# MSVC lib.exe cannot read (LNK1107). Pin the LLVM archiver for them --
+# the CMake-built parts already get it via lto-toolchain.cmake. Without
+# the pin, cc-rs only prefers llvm-lib when its compiler is clang-cl,
+# and ring swaps the compiler to plain clang on arm64, landing on the
+# dev shell's lib.exe.
+$env:AR = 'llvm-lib'
 if ($Arch -eq 'x64') {
     # -msse4.2: libtorrent's popcnt/crc32c fast paths are runtime-cpuid-guarded
     # but reach the MSVC intrinsics on clang-cl (no __GNUC__ inline-asm branch),
