@@ -517,22 +517,14 @@ impl Session {
         }
     }
 
-    /// Looks a torrent up by info-hash; either hash form finds hybrid
-    /// torrents (v1 is tried first when both are set, falling back to v2
-    /// on a miss). Returns `None` when no torrent matches or `hash` is
-    /// empty. Briefly blocking.
-    pub fn find_torrent(
-        &self,
-        hash: crate::types::InfoHash,
-    ) -> Option<crate::handle::TorrentHandle<'_>> {
-        let ct = hash.to_ct();
-        let mut out = std::mem::MaybeUninit::<sys::ct_torrent_handle>::uninit();
-        // SAFETY: session valid; on `true` the shim placement-constructed
-        // an owned handle into `out`, whose ownership we take.
-        unsafe {
-            sys::ct_session_find_torrent(self.ptr(), &ct, out.as_mut_ptr())
-                .then(|| crate::handle::TorrentHandle::from_owned(out.assume_init(), self))
-        }
+    /// Looks a torrent up by its client-data token
+    /// ([`TorrentHandle::client_data_token`](crate::TorrentHandle::client_data_token),
+    /// minted by [`Session::add_torrent`]). Returns `None` for unknown
+    /// tokens and for torrents whose removal alert has already been
+    /// processed.
+    pub fn find_torrent_by_token(&self, token: u64) -> Option<crate::handle::TorrentHandle<'_>> {
+        let raw = self.inner.registry.torrent_handle(token)?;
+        Some(crate::handle::TorrentHandle::from_raw(raw, self))
     }
 
     /// Serializes an [`AddTorrentParams`](crate::params::AddTorrentParams) to a
@@ -541,6 +533,39 @@ impl Session {
         // SAFETY: params valid; on success we own the buffer and must free it.
         let mut buf =
             with_error(|err| unsafe { sys::ct_write_resume_data_buf(params.as_ptr(), err) })?;
+        let bytes = if buf.ptr.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: ptr/len describe the owned buffer.
+            unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) }.to_vec()
+        };
+        // SAFETY: frees the buffer returned above.
+        unsafe { sys::ct_buf_free(&mut buf) };
+        Ok(bytes)
+    }
+
+    /// Serializes `params` like
+    /// [`write_resume_data`](Session::write_resume_data), additionally
+    /// embedding `data` under the resume data's `"rbt-data"` key — without
+    /// needing a live torrent (e.g. rewriting resume records offline).
+    /// Data serializing to nothing writes no key.
+    pub fn write_resume_data_with(
+        params: &crate::params::AddTorrentParams,
+        data: &dyn crate::ClientData,
+    ) -> Result<Vec<u8>> {
+        let blob = data.to_bencode();
+        // SAFETY: params and blob are valid; on success we own the buffer
+        // and must free it. An empty blob writes no "rbt-data" key.
+        let mut buf = with_error(|err| unsafe {
+            sys::ct_write_resume_data_buf_ex(
+                params.as_ptr(),
+                sys::ct_span {
+                    ptr: blob.as_ptr(),
+                    len: blob.len(),
+                },
+                err,
+            )
+        })?;
         let bytes = if buf.ptr.is_null() {
             Vec::new()
         } else {

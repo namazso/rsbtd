@@ -11,8 +11,8 @@ use std::sync::{Arc, OnceLock};
 
 use async_graphql::{Context, Object};
 use rbtorrent::{MetricKind, StatsMetric};
+use uuid::Uuid;
 
-use super::scalars::InfoHash;
 use super::settings::Settings;
 use super::types::{
     CreateJob, IpFilterRule, SessionInfo, StatKind, StatValue, Torrent, TorrentState, VersionInfo,
@@ -92,14 +92,14 @@ impl QueryRoot {
         Ok(torrents)
     }
 
-    /// One torrent by v1 or v2 info-hash, or `null` if not in the session.
+    /// One torrent by its uuid, or `null` if not in the session.
     async fn torrent(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: Uuid,
     ) -> async_graphql::Result<Option<Torrent>> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        match engine.registry().find(&info_hash.0) {
+        match engine.registry().find(&uuid) {
             None => Ok(None),
             Some(entry) => Ok(Some(Torrent::load(engine, entry)?)),
         }

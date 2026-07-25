@@ -84,6 +84,16 @@ fn write_fixture_content(dir: &Path) {
     std::fs::write(fixture_dir.join("b.txt"), &b).unwrap();
 }
 
+/// The fixture torrent's v1 info-hash, hex-encoded.
+fn fixture_v1_hex() -> String {
+    AddTorrentParams::from_torrent_file(fixture_path())
+        .unwrap()
+        .info_hashes()
+        .v1()
+        .unwrap()
+        .to_string()
+}
+
 async fn add_seeding_fixture(daemon: &Daemon, data_dir: &Path) -> Arc<TorrentEntry> {
     write_fixture_content(data_dir);
     let mut atp = AddTorrentParams::from_torrent_file(fixture_path()).unwrap();
@@ -306,12 +316,13 @@ async fn read_surface_over_tcp() {
     assert_eq!(stats[0]["name"], "net.recv_payload_bytes");
 
     let entry = add_seeding_fixture(&daemon, data.path()).await;
-    let v1_hex = entry.info_hash.v1().unwrap().to_string();
+    let uuid = entry.uuid;
+    let v1_hex = fixture_v1_hex();
     let data_json = graphql(
         addr,
         token,
         "{ torrents(state: SEEDING) { \
-             name state isSeeding hasMetadata infoHashV1 magnetUri \
+             uuid name state isSeeding hasMetadata infoHashV1 magnetUri \
              totalSize progressPpm queuePosition flags \
              sizeOnDisk pieceLength isPrivate isI2P \
              pieces(includeBitfield: true) { total have bitfield } \
@@ -325,6 +336,7 @@ async fn read_surface_over_tcp() {
     assert_eq!(t["state"], "SEEDING");
     assert_eq!(t["isSeeding"], true);
     assert_eq!(t["hasMetadata"], true);
+    assert_eq!(t["uuid"], uuid.to_string());
     assert_eq!(t["infoHashV1"], v1_hex);
     assert!(
         t["magnetUri"]
@@ -359,12 +371,12 @@ async fn read_surface_over_tcp() {
         addr,
         token,
         &format!(
-            "{{ torrent(infoHash: \"{v1_hex}\") {{ name peers {{ \
+            "{{ torrent(uuid: \"{uuid}\") {{ name peers {{ \
                  client peerId localEndpoint lastRequestUs lastActiveUs \
                  numHashfails failcount downloadRatePeak uploadRatePeak }} }} \
-               missing: torrent(infoHash: \"{}\") {{ name }} \
+               missing: torrent(uuid: \"{}\") {{ name }} \
                downloading: torrents(state: DOWNLOADING) {{ name }} }}",
-            "00000000000000000000000000000000000000ff"
+            "00000000-0000-0000-0000-000000000000"
         ),
     )
     .await;
@@ -606,13 +618,14 @@ async fn mutation_surface_over_tcp() {
                 savePath: {},
                 flags: [SEED_MODE],
                 maxConnections: 77
-            }}) {{ infoHashV1 name flags }} }}"#,
+            }}) {{ uuid infoHashV1 name flags }} }}"#,
             gql_path(data.path())
         ),
     )
     .await;
     let added = &data_json["addTorrent"];
-    let v1_hex = added["infoHashV1"].as_str().unwrap().to_owned();
+    let uuid = added["uuid"].as_str().unwrap().to_owned();
+    assert!(added["infoHashV1"].is_string());
     assert!(
         added["flags"]
             .as_array()
@@ -622,7 +635,7 @@ async fn mutation_surface_over_tcp() {
     let entry = daemon
         .engine()
         .registry()
-        .find(&rsbtd::engine::registry::parse_info_hash(&v1_hex).unwrap())
+        .find(&uuid.parse().unwrap())
         .unwrap();
     assert_eq!(
         daemon
@@ -661,9 +674,7 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(
-            r#"mutation {{ setTorrentFlags(infoHash: "{v1_hex}", set: [SEQUENTIAL_DOWNLOAD]) }}"#
-        ),
+        &format!(r#"mutation {{ setTorrentFlags(uuid: "{uuid}", set: [SEQUENTIAL_DOWNLOAD]) }}"#),
     )
     .await;
     assert!(
@@ -675,9 +686,7 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(
-            r#"mutation {{ setTorrentFlags(infoHash: "{v1_hex}", unset: [SEQUENTIAL_DOWNLOAD]) }}"#
-        ),
+        &format!(r#"mutation {{ setTorrentFlags(uuid: "{uuid}", unset: [SEQUENTIAL_DOWNLOAD]) }}"#),
     )
     .await;
     assert!(
@@ -692,15 +701,15 @@ async fn mutation_surface_over_tcp() {
         None,
         &format!(
             r#"mutation {{
-                limits: setTorrentLimits(infoHash: "{v1_hex}", uploadLimit: 250000, maxUploads: 9)
-                prio: setFilePriorities(infoHash: "{v1_hex}", priorities: [7, 1])
-                one: setFilePriority(infoHash: "{v1_hex}", index: 1, priority: 2)
-                top: queueTop(infoHash: "{v1_hex}")
-                tracker: addTracker(infoHash: "{v1_hex}", url: "http://127.0.0.1:1/announce")
-                seed: addUrlSeed(infoHash: "{v1_hex}", url: "http://127.0.0.1:1/seed")
-                unseed: removeUrlSeed(infoHash: "{v1_hex}", url: "http://127.0.0.1:1/seed")
-                deadline: setPieceDeadline(infoHash: "{v1_hex}", piece: 0, deadlineMs: 5000)
-                undeadline: clearPieceDeadlines(infoHash: "{v1_hex}")
+                limits: setTorrentLimits(uuid: "{uuid}", uploadLimit: 250000, maxUploads: 9)
+                prio: setFilePriorities(uuid: "{uuid}", priorities: [7, 1])
+                one: setFilePriority(uuid: "{uuid}", index: 1, priority: 2)
+                top: queueTop(uuid: "{uuid}")
+                tracker: addTracker(uuid: "{uuid}", url: "http://127.0.0.1:1/announce")
+                seed: addUrlSeed(uuid: "{uuid}", url: "http://127.0.0.1:1/seed")
+                unseed: removeUrlSeed(uuid: "{uuid}", url: "http://127.0.0.1:1/seed")
+                deadline: setPieceDeadline(uuid: "{uuid}", piece: 0, deadlineMs: 5000)
+                undeadline: clearPieceDeadlines(uuid: "{uuid}")
             }}"#
         ),
     )
@@ -734,7 +743,7 @@ async fn mutation_surface_over_tcp() {
         addr,
         None,
         &format!(
-            r#"mutation {{ replaceTrackers(infoHash: "{v1_hex}",
+            r#"mutation {{ replaceTrackers(uuid: "{uuid}",
                 trackers: [{{url: "http://127.0.0.1:1/a", tier: 1}}]) }}"#
         ),
     )
@@ -743,7 +752,7 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(r#"{{ torrent(infoHash: "{v1_hex}") {{ trackers {{ url tier }} }} }}"#),
+        &format!(r#"{{ torrent(uuid: "{uuid}") {{ trackers {{ url tier }} }} }}"#),
     )
     .await;
     assert_eq!(
@@ -754,14 +763,14 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(r#"mutation {{ replaceTrackers(infoHash: "{v1_hex}", trackers: []) }}"#),
+        &format!(r#"mutation {{ replaceTrackers(uuid: "{uuid}", trackers: []) }}"#),
     )
     .await;
     assert_eq!(data_json["replaceTrackers"], true);
     let data_json = graphql(
         addr,
         None,
-        &format!(r#"{{ torrent(infoHash: "{v1_hex}") {{ trackers {{ url }} }} }}"#),
+        &format!(r#"{{ torrent(uuid: "{uuid}") {{ trackers {{ url }} }} }}"#),
     )
     .await;
     assert_eq!(data_json["torrent"]["trackers"], json!([]));
@@ -772,7 +781,7 @@ async fn mutation_surface_over_tcp() {
         graphql_request(
             None,
             &format!(
-                r#"mutation {{ replaceTrackers(infoHash: "{v1_hex}",
+                r#"mutation {{ replaceTrackers(uuid: "{uuid}",
                     trackers: [{{url: "http://127.0.0.1:1/b", tier: 300}}]) }}"#
             ),
         ),
@@ -789,7 +798,7 @@ async fn mutation_surface_over_tcp() {
         graphql_request(
             None,
             &format!(
-                r#"mutation {{ setTorrentLimits(infoHash: "{v1_hex}", uploadLimit: -2, maxUploads: 5) }}"#
+                r#"mutation {{ setTorrentLimits(uuid: "{uuid}", uploadLimit: -2, maxUploads: 5) }}"#
             ),
         ),
     )
@@ -808,7 +817,7 @@ async fn mutation_surface_over_tcp() {
         stream,
         graphql_request(
             None,
-            &format!(r#"mutation {{ setTorrentLimits(infoHash: "{v1_hex}", maxConnections: 1) }}"#),
+            &format!(r#"mutation {{ setTorrentLimits(uuid: "{uuid}", maxConnections: 1) }}"#),
         ),
     )
     .await;
@@ -819,7 +828,7 @@ async fn mutation_surface_over_tcp() {
         stream,
         graphql_request(
             None,
-            &format!(r#"mutation {{ setFilePriorities(infoHash: "{v1_hex}", priorities: [9]) }}"#),
+            &format!(r#"mutation {{ setFilePriorities(uuid: "{uuid}", priorities: [9]) }}"#),
         ),
     )
     .await;
@@ -832,7 +841,7 @@ async fn mutation_surface_over_tcp() {
         graphql_request(
             None,
             &format!(
-                r#"mutation {{ setFilePriority(infoHash: "{v1_hex}", index: 2147483646, priority: 2) }}"#
+                r#"mutation {{ setFilePriority(uuid: "{uuid}", index: 2147483646, priority: 2) }}"#
             ),
         ),
     )
@@ -843,7 +852,7 @@ async fn mutation_surface_over_tcp() {
         stream,
         graphql_request(
             None,
-            &format!(r#"mutation {{ renameFile(infoHash: "{v1_hex}", index: -1, name: "x") }}"#),
+            &format!(r#"mutation {{ renameFile(uuid: "{uuid}", index: -1, name: "x") }}"#),
         ),
     )
     .await;
@@ -856,7 +865,7 @@ async fn mutation_surface_over_tcp() {
         graphql_request(
             None,
             &format!(
-                r#"mutation {{ setPiecePriorities(infoHash: "{v1_hex}", priorities: [{overlong}]) }}"#
+                r#"mutation {{ setPiecePriorities(uuid: "{uuid}", priorities: [{overlong}]) }}"#
             ),
         ),
     )
@@ -866,7 +875,7 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(r#"mutation {{ readPiece(infoHash: "{v1_hex}", piece: 0) }}"#),
+        &format!(r#"mutation {{ readPiece(uuid: "{uuid}", piece: 0) }}"#),
     )
     .await;
     let piece = base64::engine::general_purpose::STANDARD
@@ -879,7 +888,7 @@ async fn mutation_surface_over_tcp() {
         addr,
         None,
         &format!(
-            r#"mutation {{ renameFile(infoHash: "{v1_hex}", index: 1, name: "fixture/renamed.txt") }}"#
+            r#"mutation {{ renameFile(uuid: "{uuid}", index: 1, name: "fixture/renamed.txt") }}"#
         ),
     )
     .await;
@@ -889,7 +898,7 @@ async fn mutation_surface_over_tcp() {
         addr,
         None,
         &format!(
-            r#"mutation {{ moveStorage(infoHash: "{v1_hex}", path: {}) }}"#,
+            r#"mutation {{ moveStorage(uuid: "{uuid}", path: {}) }}"#,
             gql_path(moved.path())
         ),
     )
@@ -902,7 +911,7 @@ async fn mutation_surface_over_tcp() {
     graphql(
         addr,
         None,
-        &format!(r#"mutation {{ pauseTorrent(infoHash: "{v1_hex}") }}"#),
+        &format!(r#"mutation {{ pauseTorrent(uuid: "{uuid}") }}"#),
     )
     .await;
     timeout(Duration::from_secs(30), async {
@@ -919,7 +928,7 @@ async fn mutation_surface_over_tcp() {
     graphql(
         addr,
         None,
-        &format!(r#"mutation {{ resumeTorrent(infoHash: "{v1_hex}") }}"#),
+        &format!(r#"mutation {{ resumeTorrent(uuid: "{uuid}") }}"#),
     )
     .await;
     timeout(Duration::from_secs(30), async {
@@ -939,12 +948,12 @@ async fn mutation_surface_over_tcp() {
         None,
         &format!(
             r#"mutation {{
-                recheck: forceRecheck(infoHash: "{v1_hex}")
-                reannounce: forceReannounce(infoHash: "{v1_hex}")
-                dht: forceDhtAnnounce(infoHash: "{v1_hex}")
-                clear: clearError(infoHash: "{v1_hex}")
-                flush: flushCache(infoHash: "{v1_hex}")
-                save: saveResumeData(infoHash: "{v1_hex}")
+                recheck: forceRecheck(uuid: "{uuid}")
+                reannounce: forceReannounce(uuid: "{uuid}")
+                dht: forceDhtAnnounce(uuid: "{uuid}")
+                clear: clearError(uuid: "{uuid}")
+                flush: flushCache(uuid: "{uuid}")
+                save: saveResumeData(uuid: "{uuid}")
                 reopen: reopenNetworkSockets(mapPorts: false)
             }}"#
         ),
@@ -1059,7 +1068,7 @@ async fn mutation_surface_over_tcp() {
         stream,
         graphql_request(
             None,
-            r#"mutation { resumeTorrent(infoHash: "00000000000000000000000000000000000000ff") }"#,
+            r#"mutation { resumeTorrent(uuid: "00000000-0000-0000-0000-000000000000") }"#,
         ),
     )
     .await;
@@ -1070,7 +1079,7 @@ async fn mutation_surface_over_tcp() {
     let data_json = graphql(
         addr,
         None,
-        &format!(r#"mutation {{ removeTorrent(infoHash: "{v1_hex}", deleteFiles: true) }}"#),
+        &format!(r#"mutation {{ removeTorrent(uuid: "{uuid}", deleteFiles: true) }}"#),
     )
     .await;
     assert_eq!(data_json["removeTorrent"], true);
@@ -1185,7 +1194,7 @@ async fn websocket_subscriptions() {
     send(
         &mut ws,
         json!({"type": "subscribe", "id": "bad", "payload": {"query":
-            "subscription { torrentChanged(infoHash: \"00000000000000000000000000000000000000ff\") { name } }"
+            "subscription { torrentChanged(uuid: \"00000000-0000-0000-0000-000000000000\") { name } }"
         }}),
     )
     .await;
@@ -1210,7 +1219,7 @@ async fn websocket_subscriptions() {
     send(
         &mut ws,
         json!({"type": "subscribe", "id": "events", "payload": {"query":
-            "subscription { torrentEvents { __typename ... on TorrentAddedEvent { torrentId infoHash } } }"
+            "subscription { torrentEvents { __typename ... on TorrentAddedEvent { torrentUuid } } }"
         }}),
     )
     .await;
@@ -1225,11 +1234,14 @@ async fn websocket_subscriptions() {
     tokio::time::sleep(Duration::from_millis(200)).await;
 
     let entry = add_seeding_fixture(&daemon, data.path()).await;
-    let v1_hex = entry.info_hash.v1().unwrap().to_string();
+    let v1_hex = fixture_v1_hex();
 
     let event = next_data(&mut ws, "events").await;
     assert_eq!(event["torrentEvents"]["__typename"], "TorrentAddedEvent");
-    assert_eq!(event["torrentEvents"]["infoHash"], v1_hex);
+    assert_eq!(
+        event["torrentEvents"]["torrentUuid"],
+        entry.uuid.to_string()
+    );
 
     let changed = next_data(&mut ws, "changed").await;
     let snapshot = &changed["torrentChanged"][0];

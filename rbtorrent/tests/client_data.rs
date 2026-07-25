@@ -201,6 +201,8 @@ async fn client_data_reclaimed_on_removal() {
         Arc::new(TestData::new("doomed")),
     )
     .await;
+    let token = handle.client_data_token().unwrap();
+    assert!(session.find_torrent_by_token(token).is_some());
     let keep = handle.clone();
     handle.remove(RemoveFlags::empty());
 
@@ -221,10 +223,12 @@ async fn client_data_reclaimed_on_removal() {
     }
     assert!(removed, "should see TorrentRemoved");
 
-    // The sweep ran while the batch was popped: the data is gone, and the
-    // handle-aware writer degrades to the plain form.
+    // The sweep ran while the batch was popped: the data and the token
+    // lookup are gone, and the handle-aware writer degrades to the plain
+    // form.
     assert!(keep.client_data().is_err());
     assert!(keep.set_client_data(Arc::new(TestData::default())).is_err());
+    assert!(session.find_torrent_by_token(token).is_none());
     let plain = keep.write_resume_data(&atp).unwrap();
     assert!(!contains(&plain, b"8:rbt-data"));
 
@@ -266,6 +270,26 @@ async fn duplicate_add_keeps_original_data() {
     drop(first);
     drop(alerts);
     session.close().await;
+}
+
+#[test]
+fn params_writer_embeds_client_data() {
+    let save_dir = tempfile::tempdir().unwrap();
+    let atp = fixture_atp("transfer.torrent", &save_dir);
+
+    // The params-level writer needs no live torrent (offline rewrites).
+    let spliced = Session::write_resume_data_with(&atp, &TestData::new("offline")).unwrap();
+    assert!(contains(&spliced, b"8:rbt-data7:offline"));
+    let (restored, data) = Session::read_resume_data_with::<TestData>(&spliced, None).unwrap();
+    assert_eq!(restored.info_hashes(), atp.info_hashes());
+    assert_eq!(data, TestData::new("offline"));
+
+    // A payload serializing to nothing writes no key.
+    let plain = Session::write_resume_data_with(&atp, &()).unwrap();
+    assert_eq!(plain, Session::write_resume_data(&atp).unwrap());
+
+    // The bad-blob contract applies here too.
+    assert!(Session::write_resume_data_with(&atp, &BadData).is_err());
 }
 
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {

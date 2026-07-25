@@ -13,7 +13,7 @@ use std::sync::Arc;
 use async_graphql::{Context, Object};
 use rbtorrent::{AddTorrentParams, DownloadPriority, SettingsPack, TorrentFlags, TorrentHandle};
 
-use super::scalars::{Base64Bytes, InfoHash};
+use super::scalars::Base64Bytes;
 use super::settings::{Settings, SettingsInput};
 use super::types::{
     AddTorrentInput, CreateJob, CreateTorrentInput, IpFilterRuleInput, MoveMode, ScrapeResult,
@@ -24,12 +24,9 @@ use crate::engine::{Engine, EngineError};
 
 pub struct MutationRoot;
 
-/// Resolves the torrent entry for an info-hash or fails with NOT_FOUND.
-fn lookup(engine: &Engine, info_hash: &InfoHash) -> Result<Arc<TorrentEntry>, EngineError> {
-    engine
-        .registry()
-        .find(&info_hash.0)
-        .ok_or(EngineError::NotFound)
+/// Resolves the torrent entry for a uuid or fails with NOT_FOUND.
+fn lookup(engine: &Engine, uuid: &uuid::Uuid) -> Result<Arc<TorrentEntry>, EngineError> {
+    engine.registry().find(uuid).ok_or(EngineError::NotFound)
 }
 
 /// Validates priorities into libtorrent's 0..=7 range.
@@ -187,11 +184,11 @@ impl MutationRoot {
     async fn remove_torrent(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         #[graphql(default = false)] delete_files: bool,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.remove_torrent(&info_hash.0, delete_files).await?;
+        engine.remove_torrent(&uuid, delete_files).await?;
         Ok(true)
     }
 
@@ -202,12 +199,12 @@ impl MutationRoot {
     async fn pause_torrent(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         #[graphql(default = true)] detach: bool,
         #[graphql(default = false)] graceful: bool,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let flags = if graceful {
             TorrentHandle::PAUSE_GRACEFUL
         } else {
@@ -227,10 +224,10 @@ impl MutationRoot {
     async fn resume_torrent(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.resume())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.resume())?;
         Ok(true)
     }
 
@@ -238,10 +235,10 @@ impl MutationRoot {
     async fn force_recheck(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.force_recheck())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.force_recheck())?;
         Ok(true)
     }
 
@@ -252,12 +249,12 @@ impl MutationRoot {
     async fn force_reannounce(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         #[graphql(default = 0)] seconds: i32,
         #[graphql(default = -1)] tracker_index: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         if tracker_index != -1 {
             // libtorrent silently ignores out-of-range indexes while the
             // mutation would report success.
@@ -279,10 +276,10 @@ impl MutationRoot {
     async fn force_dht_announce(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.force_dht_announce())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.force_dht_announce())?;
         Ok(true)
     }
 
@@ -290,10 +287,10 @@ impl MutationRoot {
     async fn clear_error(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.clear_error())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.clear_error())?;
         Ok(true)
     }
 
@@ -301,10 +298,10 @@ impl MutationRoot {
     async fn flush_cache(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.flush_cache())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.flush_cache())?;
         Ok(true)
     }
 
@@ -312,10 +309,10 @@ impl MutationRoot {
     async fn save_resume_data(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         engine.save_resume_data(&entry).await?;
         Ok(true)
     }
@@ -325,12 +322,12 @@ impl MutationRoot {
     async fn move_storage(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         path: String,
         #[graphql(default_with = "MoveMode::AlwaysReplaceFiles")] mode: MoveMode,
     ) -> async_graphql::Result<String> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         Ok(engine.move_storage(&entry, &path, mode.bits()).await?)
     }
 
@@ -338,12 +335,12 @@ impl MutationRoot {
     async fn rename_file(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         index: i32,
         name: String,
     ) -> async_graphql::Result<String> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         Ok(engine.rename_file(&entry, index, &name).await?)
     }
 
@@ -352,12 +349,12 @@ impl MutationRoot {
     async fn set_file_priority(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         index: i32,
         priority: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let p = validate_priorities(&[priority])?[0];
         engine
             .with_handle(&entry, |h| h.set_file_priority(index, p))?
@@ -373,11 +370,11 @@ impl MutationRoot {
     async fn set_file_priorities(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         priorities: Vec<i32>,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let prios = validate_priorities(&priorities)?;
         engine
             .with_handle(&entry, |h| h.prioritize_files(&prios))?
@@ -389,12 +386,12 @@ impl MutationRoot {
     async fn set_piece_priority(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         piece: i32,
         priority: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let p = validate_priorities(&[priority])?[0];
         engine.with_handle(&entry, |h| {
             check_piece_index(h, piece)?;
@@ -410,11 +407,11 @@ impl MutationRoot {
     async fn set_piece_priorities(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         priorities: Vec<i32>,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let prios = validate_priorities(&priorities)?;
         engine
             .with_handle(&entry, |h| h.prioritize_pieces(&prios))?
@@ -426,12 +423,12 @@ impl MutationRoot {
     async fn set_piece_deadline(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         piece: i32,
         deadline_ms: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| {
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| {
             check_piece_index(h, piece)?;
             h.set_piece_deadline(piece, deadline_ms, 0)
                 .map_err(EngineError::from)
@@ -443,11 +440,11 @@ impl MutationRoot {
     async fn reset_piece_deadline(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         piece: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| {
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| {
             check_piece_index(h, piece)?;
             h.reset_piece_deadline(piece);
             Ok::<_, EngineError>(())
@@ -459,10 +456,10 @@ impl MutationRoot {
     async fn clear_piece_deadlines(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.clear_piece_deadlines())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.clear_piece_deadlines())?;
         Ok(true)
     }
 
@@ -474,14 +471,14 @@ impl MutationRoot {
     async fn set_torrent_limits(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         upload_limit: Option<i32>,
         download_limit: Option<i32>,
         max_uploads: Option<i32>,
         max_connections: Option<i32>,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         // Validate the whole delta before applying any of it.
         if let Some(limit) = upload_limit {
             check_rate_limit("uploadLimit", limit)?;
@@ -522,12 +519,12 @@ impl MutationRoot {
     async fn set_torrent_flags(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         #[graphql(default)] set: Vec<TorrentFlag>,
         #[graphql(default)] unset: Vec<TorrentFlag>,
     ) -> async_graphql::Result<Vec<TorrentFlag>> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         // libtorrent reads this flag only when the torrent is added;
         // accepting a runtime change would report success while updates
         // keep (or stop) flowing unchanged.
@@ -549,35 +546,23 @@ impl MutationRoot {
     }
 
     /// Moves the torrent to the top of the download queue.
-    async fn queue_top(
-        &self,
-        ctx: &Context<'_>,
-        info_hash: InfoHash,
-    ) -> async_graphql::Result<bool> {
+    async fn queue_top(&self, ctx: &Context<'_>, uuid: uuid::Uuid) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.queue_position_top())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.queue_position_top())?;
         Ok(true)
     }
 
     /// Moves the torrent one step up the download queue.
-    async fn queue_up(
-        &self,
-        ctx: &Context<'_>,
-        info_hash: InfoHash,
-    ) -> async_graphql::Result<bool> {
+    async fn queue_up(&self, ctx: &Context<'_>, uuid: uuid::Uuid) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.queue_position_up())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.queue_position_up())?;
         Ok(true)
     }
 
     /// Moves the torrent one step down the download queue.
-    async fn queue_down(
-        &self,
-        ctx: &Context<'_>,
-        info_hash: InfoHash,
-    ) -> async_graphql::Result<bool> {
+    async fn queue_down(&self, ctx: &Context<'_>, uuid: uuid::Uuid) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.queue_position_down())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.queue_position_down())?;
         Ok(true)
     }
 
@@ -585,10 +570,10 @@ impl MutationRoot {
     async fn queue_bottom(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.queue_position_bottom())?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.queue_position_bottom())?;
         Ok(true)
     }
 
@@ -597,7 +582,7 @@ impl MutationRoot {
     async fn set_queue_position(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         position: i32,
     ) -> async_graphql::Result<bool> {
         if position < 0 {
@@ -607,9 +592,7 @@ impl MutationRoot {
         }
         let engine = ctx.data::<Arc<Engine>>()?;
         engine
-            .with_handle(&*lookup(engine, &info_hash)?, |h| {
-                h.set_queue_position(position)
-            })?
+            .with_handle(&*lookup(engine, &uuid)?, |h| h.set_queue_position(position))?
             .map_err(EngineError::from)?;
         Ok(true)
     }
@@ -620,14 +603,14 @@ impl MutationRoot {
     async fn add_tracker(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         url: String,
         #[graphql(default = 0)] tier: i32,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
         let tier = u8::try_from(tier)
             .map_err(|_| EngineError::Invalid(format!("tracker tier {tier} is outside 0..=255")))?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.add_tracker(&url, tier))?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.add_tracker(&url, tier))?;
         Ok(true)
     }
 
@@ -637,11 +620,11 @@ impl MutationRoot {
     async fn replace_trackers(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         trackers: Vec<TrackerInput>,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let mut list = Vec::with_capacity(trackers.len());
         for tracker in &trackers {
             let tier = u8::try_from(tracker.tier).map_err(|_| {
@@ -660,11 +643,11 @@ impl MutationRoot {
     async fn scrape_tracker(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         #[graphql(default = -1)] tracker_index: i32,
     ) -> async_graphql::Result<ScrapeResult> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let (tracker_url, complete, incomplete) =
             engine.scrape_tracker(&entry, tracker_index).await?;
         Ok(ScrapeResult {
@@ -678,11 +661,11 @@ impl MutationRoot {
     async fn add_url_seed(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         url: String,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.add_url_seed(&url))?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.add_url_seed(&url))?;
         Ok(true)
     }
 
@@ -690,11 +673,11 @@ impl MutationRoot {
     async fn remove_url_seed(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         url: String,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        engine.with_handle(&*lookup(engine, &info_hash)?, |h| h.remove_url_seed(&url))?;
+        engine.with_handle(&*lookup(engine, &uuid)?, |h| h.remove_url_seed(&url))?;
         Ok(true)
     }
 
@@ -704,11 +687,11 @@ impl MutationRoot {
     async fn connect_peer(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         address: String,
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         let addr = address
             .parse()
             .map_err(|_| EngineError::Invalid(format!("cannot parse {address} as ip:port")))?;
@@ -723,11 +706,11 @@ impl MutationRoot {
     async fn read_piece(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: uuid::Uuid,
         piece: i32,
     ) -> async_graphql::Result<Base64Bytes> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        let entry = lookup(engine, &info_hash)?;
+        let entry = lookup(engine, &uuid)?;
         Ok(Base64Bytes(engine.read_piece(&entry, piece).await?))
     }
 

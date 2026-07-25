@@ -154,12 +154,13 @@ async fn two_daemon_transfer_via_api() {
                 torrentData: "{torrent_b64}",
                 savePath: {},
                 flags: [SEED_MODE]
-            }}) {{ infoHashV1 magnetUri }} }}"#,
+            }}) {{ uuid infoHashV1 magnetUri }} }}"#,
             gql_path(seed_data.path())
         ),
     )
     .await;
     let magnet = data["addTorrent"]["magnetUri"].as_str().unwrap().to_owned();
+    let seed_uuid = data["addTorrent"]["uuid"].as_str().unwrap().to_owned();
     let v1_hex = data["addTorrent"]["infoHashV1"]
         .as_str()
         .unwrap()
@@ -170,7 +171,7 @@ async fn two_daemon_transfer_via_api() {
         loop {
             let data = graphql(
                 seed_addr,
-                &format!(r#"{{ torrent(infoHash: "{v1_hex}") {{ isSeeding }} }}"#),
+                &format!(r#"{{ torrent(uuid: "{seed_uuid}") {{ isSeeding }} }}"#),
             )
             .await;
             if data["torrent"]["isSeeding"] == true {
@@ -191,17 +192,20 @@ async fn two_daemon_transfer_via_api() {
             r#"mutation {{ addTorrent(input: {{
                 magnetUri: "{magnet}",
                 savePath: {}
-            }}) {{ infoHashV1 hasMetadata }} }}"#,
+            }}) {{ uuid infoHashV1 hasMetadata }} }}"#,
             gql_path(leech_data.path())
         ),
     )
     .await;
+    // Each daemon mints its own uuid; content identity is the info-hash.
     assert_eq!(data["addTorrent"]["infoHashV1"], v1_hex);
     assert_eq!(data["addTorrent"]["hasMetadata"], false);
+    let leech_uuid = data["addTorrent"]["uuid"].as_str().unwrap().to_owned();
+    assert_ne!(leech_uuid, seed_uuid);
     graphql(
         leech_addr,
         &format!(
-            r#"mutation {{ connectPeer(infoHash: "{v1_hex}", address: "127.0.0.1:{seed_port}") }}"#
+            r#"mutation {{ connectPeer(uuid: "{leech_uuid}", address: "127.0.0.1:{seed_port}") }}"#
         ),
     )
     .await;
@@ -212,7 +216,7 @@ async fn two_daemon_transfer_via_api() {
             let data = graphql(
                 leech_addr,
                 &format!(
-                    r#"{{ torrent(infoHash: "{v1_hex}") {{ hasMetadata isFinished name state
+                    r#"{{ torrent(uuid: "{leech_uuid}") {{ hasMetadata isFinished name state
                           progressPpm savePath totalWanted totalWantedDone
                           files {{ path progressBytes size }} }} }}"#
                 ),
@@ -232,7 +236,7 @@ async fn two_daemon_transfer_via_api() {
     // The payload reaches disk after a cache flush and matches.
     graphql(
         leech_addr,
-        &format!(r#"mutation {{ flushCache(infoHash: "{v1_hex}") }}"#),
+        &format!(r#"mutation {{ flushCache(uuid: "{leech_uuid}") }}"#),
     )
     .await;
     timeout(Duration::from_secs(30), async {
@@ -369,16 +373,19 @@ async fn subprocess_daemon_driven_by_ctl() {
     ]))
     .await;
     assert!(ok, "add failed: {stderr}");
-    let v1_hex = stdout
+    let uuid = stdout
         .split_whitespace()
         .nth(1)
-        .expect("no hash in add output")
+        .expect("no uuid in add output")
         .to_owned();
-    assert_eq!(v1_hex.len(), 40, "unexpected add output: {stdout}");
+    assert!(
+        uuid.parse::<uuid::Uuid>().is_ok(),
+        "unexpected add output: {stdout}"
+    );
 
     let (ok, _, stderr) = ctl(args(&[
         "wait",
-        &v1_hex,
+        &uuid,
         "--until",
         "seeding",
         "--timeout",
@@ -387,8 +394,8 @@ async fn subprocess_daemon_driven_by_ctl() {
     .await;
     assert!(ok, "wait failed: {stderr}");
     let (ok, stdout, _) = ctl(args(&["list"])).await;
-    assert!(ok && stdout.contains(&v1_hex), "list output: {stdout}");
-    let (ok, stdout, _) = ctl(args(&["status", &v1_hex])).await;
+    assert!(ok && stdout.contains(&uuid), "list output: {stdout}");
+    let (ok, stdout, _) = ctl(args(&["status", &uuid])).await;
     assert!(ok && stdout.contains("state: SEEDING"), "status: {stdout}");
     let (ok, stdout, stderr) = ctl(args(&["settings", "set", "upload_rate_limit=123456"])).await;
     assert!(ok, "settings set failed: {stderr}");
@@ -459,10 +466,7 @@ async fn subprocess_daemon_driven_by_ctl() {
         .unwrap();
     assert!(exit.success(), "daemon exited with {exit}");
     assert!(state.path().join("session.state").exists());
-    let resume = state
-        .path()
-        .join("torrents")
-        .join(format!("{v1_hex}.resume"));
+    let resume = state.path().join("torrents").join(format!("{uuid}.resume"));
     assert!(resume.exists(), "resume file missing after SIGTERM");
     assert!(!sock.exists(), "socket file left behind");
     // Payload untouched.

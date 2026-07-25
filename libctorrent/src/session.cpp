@@ -499,29 +499,6 @@ void ct_session_remove_torrent(ct_session* session,
 	}
 }
 
-bool ct_session_find_torrent(const ct_session* session,
-	const ct_info_hash* hash, ct_torrent_handle* out)
-{
-	if (!session || !hash || !out) return false;
-	try {
-		static constexpr uint8_t zeros[32] = {};
-		lt::torrent_handle th;
-		if (std::memcmp(hash->v1.data, zeros, 20) != 0) {
-			th = unwrap(session)->find_torrent(
-				lt::sha1_hash(reinterpret_cast<const char*>(hash->v1.data)));
-		}
-		if (!th.is_valid() && std::memcmp(hash->v2.data, zeros, 32) != 0) {
-			th = unwrap(session)->find_torrent(
-				lt::sha256_hash(reinterpret_cast<const char*>(hash->v2.data)));
-		}
-		if (!th.is_valid()) return false;
-		new (out->data_) lt::torrent_handle(std::move(th));
-		return true;
-	} catch (...) {
-		return false;
-	}
-}
-
 ct_buf ct_write_resume_data_buf(const ct_add_torrent_params* atp,
 	ct_error* err)
 {

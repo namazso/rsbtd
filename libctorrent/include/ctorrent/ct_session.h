@@ -149,18 +149,6 @@ void ct_session_remove_torrent(
   uint32_t flags
 );
 
-/* Looks a torrent up by info-hash; either hash form finds hybrid torrents
- * (v1 is tried first when both are set). On a hit, constructs an owned
- * handle into *out (release with ct_torrent_handle_drop) and returns true.
- * Returns false — leaving *out untouched — when no torrent matches, *hash*
- * is all-zero, or an argument is NULL. Briefly blocking (round-trips to the
- * network thread). */
-bool ct_session_find_torrent(
-  const ct_session* session,
-  const ct_info_hash* hash,
-  struct ct_torrent_handle* out
-);
-
 /* Resume data: write an add_torrent_params to a bencoded buffer (typically for
  * saving to disk), or read it back. The buffer format is libtorrent's internal
  * resume-data encoding; use ct_load_torrent_* for .torrent files. */

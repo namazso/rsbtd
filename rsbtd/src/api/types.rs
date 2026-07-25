@@ -11,7 +11,7 @@ use std::sync::Arc;
 use async_graphql::{ComplexObject, Context, Enum, Object, SimpleObject};
 use rbtorrent::{TorrentFlags, TorrentHandle, TorrentState as LtState, TorrentStatus};
 
-use super::scalars::{Base64Bytes, InfoHash};
+use super::scalars::{Base64Bytes, Sha1Sum, Sha256Sum};
 use crate::engine::events::TrackerInfo;
 use crate::engine::registry::TorrentEntry;
 use crate::engine::{Engine, EngineError, PeerSnapshot};
@@ -1141,33 +1141,23 @@ impl Torrent {
 /// separate live requests and can reflect a slightly later state.
 #[Object]
 impl Torrent {
-    /// Session-unique id. NOT stable across daemon restarts; use the
-    /// info-hash as the durable identifier.
-    async fn id(&self) -> u32 {
-        self.entry.id
-    }
-
-    /// Best info-hash (v1 preferred).
-    async fn info_hash(&self) -> InfoHash {
-        InfoHash(self.entry.info_hash)
+    /// The torrent's durable identifier: minted when the torrent is
+    /// added, stable across daemon restarts, and the sole key for all
+    /// torrent operations.
+    async fn uuid(&self) -> uuid::Uuid {
+        self.entry.uuid
     }
 
     /// The v1 (SHA-1) info-hash, if the torrent has one. A hybrid
     /// magnet may gain it when metadata arrives.
-    async fn info_hash_v1(&self) -> Option<InfoHash> {
-        self.entry
-            .info_hash
-            .v1()
-            .map(|h| InfoHash(rbtorrent::InfoHash::from_v1(h)))
+    async fn info_hash_v1(&self) -> Option<Sha1Sum> {
+        self.status.info_hashes().v1().map(Sha1Sum)
     }
 
     /// The v2 (SHA-256) info-hash, if the torrent has one. A hybrid
     /// magnet may gain it when metadata arrives.
-    async fn info_hash_v2(&self) -> Option<InfoHash> {
-        self.entry
-            .info_hash
-            .v2()
-            .map(|h| InfoHash(rbtorrent::InfoHash::from_v2(h)))
+    async fn info_hash_v2(&self) -> Option<Sha256Sum> {
+        self.status.info_hashes().v2().map(Sha256Sum)
     }
 
     /// Display name: from metadata, or the provisional add/magnet name
@@ -1554,13 +1544,14 @@ impl Torrent {
 
     /// A magnet link (info-hashes and display name only).
     async fn magnet_uri(&self) -> String {
+        let hashes = self.status.info_hashes();
         let mut uri = String::from("magnet:?");
         let mut sep = "";
-        if let Some(v1) = self.entry.info_hash.v1() {
+        if let Some(v1) = hashes.v1() {
             uri.push_str(&format!("xt=urn:btih:{v1}"));
             sep = "&";
         }
-        if let Some(v2) = self.entry.info_hash.v2() {
+        if let Some(v2) = hashes.v2() {
             uri.push_str(&format!("{sep}xt=urn:btmh:1220{v2}"));
             sep = "&";
         }

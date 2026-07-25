@@ -10,23 +10,43 @@ use async_graphql::{InputValueError, InputValueResult, Scalar, ScalarType, Value
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 
-use crate::engine::registry::parse_info_hash;
-
-/// A torrent info-hash: 40 hex characters (v1/SHA-1) or 64 hex characters
-/// (v2/SHA-256). Serializes as the torrent's best hash (v1 preferred).
+/// A SHA-1 digest.
 #[derive(Clone, Copy, Debug)]
-pub struct InfoHash(pub rbtorrent::InfoHash);
+pub struct Sha1Sum(pub rbtorrent::Sha1Hash);
 
-/// A torrent info-hash: 40 hex characters (v1/SHA-1) or 64 hex
-/// characters (v2/SHA-256). Input accepts either case and either hash
-/// of a hybrid torrent; output is lowercase and prefers v1.
-#[Scalar(name = "InfoHash")]
-impl ScalarType for InfoHash {
+/// A SHA-1 digest: 40 hex characters.
+#[Scalar]
+impl ScalarType for Sha1Sum {
     fn parse(value: Value) -> InputValueResult<Self> {
         match &value {
-            Value::String(s) => parse_info_hash(s).map(InfoHash).ok_or_else(|| {
-                InputValueError::custom("expected 40 (v1) or 64 (v2) hex characters")
-            }),
+            Value::String(s) => hex::decode(s)
+                .ok()
+                .and_then(|b| <[u8; 20]>::try_from(b).ok())
+                .map(|b| Sha1Sum(rbtorrent::Sha1Hash(b)))
+                .ok_or_else(|| InputValueError::custom("expected 40 hex characters")),
+            _ => Err(InputValueError::expected_type(value)),
+        }
+    }
+
+    fn to_value(&self) -> Value {
+        Value::String(self.0.to_string())
+    }
+}
+
+/// A SHA-256 digest.
+#[derive(Clone, Copy, Debug)]
+pub struct Sha256Sum(pub rbtorrent::Sha256Hash);
+
+/// A SHA-256 digest: 64 hex characters.
+#[Scalar]
+impl ScalarType for Sha256Sum {
+    fn parse(value: Value) -> InputValueResult<Self> {
+        match &value {
+            Value::String(s) => hex::decode(s)
+                .ok()
+                .and_then(|b| <[u8; 32]>::try_from(b).ok())
+                .map(|b| Sha256Sum(rbtorrent::Sha256Hash(b)))
+                .ok_or_else(|| InputValueError::custom("expected 64 hex characters")),
             _ => Err(InputValueError::expected_type(value)),
         }
     }
@@ -64,21 +84,23 @@ mod tests {
     use super::*;
 
     #[test]
-    fn info_hash_roundtrip() {
+    fn sha1_sum_roundtrip() {
         let hex = "0123456789abcdef0123456789abcdef01234567";
-        let parsed = <InfoHash as ScalarType>::parse(Value::String(hex.into())).unwrap();
+        let parsed = <Sha1Sum as ScalarType>::parse(Value::String(hex.into())).unwrap();
         assert_eq!(parsed.to_value(), Value::String(hex.into()));
-        assert!(<InfoHash as ScalarType>::parse(Value::String("nope".into())).is_err());
-        assert!(<InfoHash as ScalarType>::parse(Value::Number(7.into())).is_err());
+        assert!(<Sha1Sum as ScalarType>::parse(Value::String("nope".into())).is_err());
+        assert!(<Sha1Sum as ScalarType>::parse(Value::String("01".repeat(32))).is_err());
+        assert!(<Sha1Sum as ScalarType>::parse(Value::Number(7.into())).is_err());
     }
 
     #[test]
-    fn hybrid_info_hash_serializes_v1() {
-        let hybrid = rbtorrent::InfoHash::new(
-            Some(rbtorrent::Sha1Hash([0x01; 20])),
-            Some(rbtorrent::Sha256Hash([0x02; 32])),
-        );
-        assert_eq!(InfoHash(hybrid).to_value(), Value::String("01".repeat(20)));
+    fn sha256_sum_roundtrip() {
+        let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let parsed = <Sha256Sum as ScalarType>::parse(Value::String(hex.into())).unwrap();
+        assert_eq!(parsed.to_value(), Value::String(hex.into()));
+        assert!(<Sha256Sum as ScalarType>::parse(Value::String("nope".into())).is_err());
+        assert!(<Sha256Sum as ScalarType>::parse(Value::String("01".repeat(20))).is_err());
+        assert!(<Sha256Sum as ScalarType>::parse(Value::Number(7.into())).is_err());
     }
 
     #[test]

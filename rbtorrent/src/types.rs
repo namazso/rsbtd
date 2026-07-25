@@ -174,15 +174,6 @@ impl InfoHash {
         (self.v1.is_some() && self.v1 == other.v1) || (self.v2.is_some() && self.v2 == other.v2)
     }
 
-    /// The best available hash as raw bytes: v1 if present, else v2.
-    pub fn best(&self) -> &[u8] {
-        match (&self.v1, &self.v2) {
-            (Some(v1), _) => &v1.0,
-            (None, Some(v2)) => &v2.0,
-            (None, None) => &[],
-        }
-    }
-
     pub(crate) fn from_ct(h: sys::ct_info_hash) -> InfoHash {
         let v1 = Sha1Hash(h.v1.data);
         let v2 = Sha256Hash(h.v2.data);
@@ -201,16 +192,6 @@ impl InfoHash {
             v2: sys::ct_sha256 {
                 data: self.v2.map_or([0; 32], |h| h.0),
             },
-        }
-    }
-}
-
-impl fmt::Display for InfoHash {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (&self.v1, &self.v2) {
-            (Some(v1), _) => write!(f, "{v1}"),
-            (None, Some(v2)) => write!(f, "{v2}"),
-            (None, None) => write!(f, "(none)"),
         }
     }
 }

@@ -7,8 +7,9 @@
 //! GraphQL event types - strongly-typed representations of engine events.
 
 use async_graphql::{SimpleObject, Union};
+use uuid::Uuid;
 
-use super::scalars::{Base64Bytes, InfoHash};
+use super::scalars::Base64Bytes;
 use super::types::{Torrent, TorrentState, Tracker};
 use crate::engine::events::{Event, EventKind};
 
@@ -47,44 +48,38 @@ impl TorrentEvent {
             EventKind::TorrentAdded => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentAdded(TorrentAddedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::TorrentRemoved => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentRemoved(TorrentRemovedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::TorrentFinished => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentFinished(TorrentFinishedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::MetadataReceived => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::MetadataReceived(MetadataReceivedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::MetadataFailed { error } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::MetadataFailed(MetadataFailedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::TorrentError { error, filename } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentError(TorrentErrorEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                     filename: (!filename.is_empty()).then(|| filename.clone()),
                 }))
@@ -92,8 +87,7 @@ impl TorrentEvent {
             EventKind::StateChanged { state, prev_state } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::StateChanged(StateChangedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     state: rbtorrent::TorrentState::from_code(*state).into(),
                     prev_state: rbtorrent::TorrentState::from_code(*prev_state).into(),
                 }))
@@ -111,23 +105,20 @@ impl TorrentEvent {
             EventKind::ResumeDataSaved => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::ResumeDataSaved(ResumeDataSavedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::ResumeDataFailed { message } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::ResumeDataFailed(ResumeDataFailedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     error: Some(message.clone()),
                 }))
             }
             EventKind::FileRenamed { index, new_name } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::FileRenamed(FileRenamedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     file_index: *index,
                     new_name: new_name.clone(),
                 }))
@@ -135,8 +126,7 @@ impl TorrentEvent {
             EventKind::FileRenameFailed { index, error } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::FileRenameFailed(FileRenameFailedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     file_index: *index,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
@@ -144,24 +134,21 @@ impl TorrentEvent {
             EventKind::StorageMoved { path } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::StorageMoved(StorageMovedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     path: path.clone(),
                 }))
             }
             EventKind::StorageMovedFailed { error } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::StorageMovedFailed(StorageMovedFailedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::ReadPiece { piece, data, error } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::ReadPiece(ReadPieceEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     piece: *piece,
                     data: error.is_none().then(|| Base64Bytes(data.clone())),
                     error: error.as_ref().map(|e| e.to_string()),
@@ -170,24 +157,21 @@ impl TorrentEvent {
             EventKind::Trackers(trackers) => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::Trackers(TrackersEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     trackers: trackers.iter().cloned().map(Tracker::from).collect(),
                 }))
             }
             EventKind::Peers(peers) => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::Peers(PeersEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     peer_count: peers.len() as i32,
                 }))
             }
             EventKind::FileProgress(progress) => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::FileProgress(FileProgressEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     progress: progress.clone(),
                 }))
             }
@@ -198,8 +182,7 @@ impl TorrentEvent {
             } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::ScrapeReply(ScrapeReplyEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     tracker_url: tracker_url.clone(),
                     incomplete: *incomplete,
                     complete: *complete,
@@ -211,8 +194,7 @@ impl TorrentEvent {
             } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::ScrapeFailed(ScrapeFailedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                     tracker_url: tracker_url.clone(),
                     error: Some(error_message.clone()),
                 }))
@@ -220,16 +202,14 @@ impl TorrentEvent {
             EventKind::TorrentDeleted => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentDeleted(TorrentDeletedEvent {
-                    torrent_id: torrent.id,
-                    info_hash: InfoHash(torrent.info_hash),
+                    torrent_uuid: torrent.uuid,
                 }))
             }
             EventKind::TorrentDeleteFailed { error } => {
                 let torrent = event.torrent?;
                 Some(TorrentEvent::TorrentDeleteFailed(
                     TorrentDeleteFailedEvent {
-                        torrent_id: torrent.id,
-                        info_hash: InfoHash(torrent.info_hash),
+                        torrent_uuid: torrent.uuid,
                         error: error.as_ref().map(|e| e.to_string()),
                     },
                 ))
@@ -243,56 +223,45 @@ impl TorrentEvent {
     }
 }
 
-// Every torrent-scoped event carries the session-local `torrentId` and
-// the durable `infoHash` (v1 preferred); key persistent client state by
-// hash. A nullable `error` means the underlying alert supplied no
-// concrete error object.
+// Every torrent-scoped event carries the torrent's durable `torrentUuid`;
+// key persistent client state by it. A nullable `error` means the
+// underlying alert supplied no concrete error object.
 
 /// A torrent was added and registered in the session.
 #[derive(SimpleObject)]
 pub struct TorrentAddedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// A torrent was removed from the session. Disk deletion, if requested,
 /// completes separately (`TorrentDeletedEvent`).
 #[derive(SimpleObject)]
 pub struct TorrentRemovedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// All selected (priority-nonzero) content finished downloading.
 #[derive(SimpleObject)]
 pub struct TorrentFinishedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// Magnet metadata was received. A hybrid magnet may gain its second
 /// info-hash at this point.
 #[derive(SimpleObject)]
 pub struct MetadataReceivedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// Magnet metadata acquisition failed.
 #[derive(SimpleObject)]
 pub struct MetadataFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Failure description, when the engine supplied one.
     pub error: Option<String>,
 }
@@ -300,10 +269,8 @@ pub struct MetadataFailedEvent {
 /// The torrent entered an error state and stopped.
 #[derive(SimpleObject)]
 pub struct TorrentErrorEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Error description, when the engine supplied one.
     pub error: Option<String>,
     /// The affected file path; `null` when the error is not
@@ -314,10 +281,8 @@ pub struct TorrentErrorEvent {
 /// The torrent's lifecycle state changed.
 #[derive(SimpleObject)]
 pub struct StateChangedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// The new state.
     pub state: TorrentState,
     /// The previous state.
@@ -336,19 +301,15 @@ pub struct StateUpdateEvent {
 /// Resume data was generated and persisted.
 #[derive(SimpleObject)]
 pub struct ResumeDataSavedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// Generating or persisting resume data failed.
 #[derive(SimpleObject)]
 pub struct ResumeDataFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Failure description. Nullable only so that `error` merges across
     /// event types in one selection; this event always carries one.
     pub error: Option<String>,
@@ -357,10 +318,8 @@ pub struct ResumeDataFailedEvent {
 /// A file was renamed (the outcome of `renameFile`).
 #[derive(SimpleObject)]
 pub struct FileRenamedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Zero-based index of the renamed file.
     pub file_index: i32,
     /// The accepted new path, relative to the save path.
@@ -370,10 +329,8 @@ pub struct FileRenamedEvent {
 /// A file rename failed.
 #[derive(SimpleObject)]
 pub struct FileRenameFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Zero-based index of the file that failed to rename.
     pub file_index: i32,
     /// Failure description, when the engine supplied one.
@@ -384,10 +341,8 @@ pub struct FileRenameFailedEvent {
 /// `moveStorage`).
 #[derive(SimpleObject)]
 pub struct StorageMovedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// The new save path.
     pub path: String,
 }
@@ -395,10 +350,8 @@ pub struct StorageMovedEvent {
 /// Moving the torrent's storage failed.
 #[derive(SimpleObject)]
 pub struct StorageMovedFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Failure description, when the engine supplied one.
     pub error: Option<String>,
 }
@@ -406,10 +359,8 @@ pub struct StorageMovedFailedEvent {
 /// A piece read completed (the outcome of `readPiece`).
 #[derive(SimpleObject)]
 pub struct ReadPieceEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Zero-based piece index.
     pub piece: i32,
     /// The exact piece bytes (the final piece may be shorter than
@@ -425,10 +376,8 @@ pub struct ReadPieceEvent {
 /// mutation that resolves tracker indexes).
 #[derive(SimpleObject)]
 pub struct TrackersEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// The torrent's trackers, in current tracker order.
     pub trackers: Vec<Tracker>,
 }
@@ -439,10 +388,8 @@ pub struct TrackersEvent {
 /// selection).
 #[derive(SimpleObject)]
 pub struct PeersEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Number of connected peers in the snapshot.
     pub peer_count: i32,
 }
@@ -452,10 +399,8 @@ pub struct PeersEvent {
 /// fetches per-file progress (a `Torrent.files` selection).
 #[derive(SimpleObject)]
 pub struct FileProgressEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Downloaded bytes per file, indexed by file index.
     pub progress: Vec<i64>,
 }
@@ -463,10 +408,8 @@ pub struct FileProgressEvent {
 /// A tracker answered a scrape (the outcome of `scrapeTracker`).
 #[derive(SimpleObject)]
 pub struct ScrapeReplyEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// The URL of the tracker that answered, when known.
     pub tracker_url: Option<String>,
     /// Downloaders in the swarm.
@@ -478,10 +421,8 @@ pub struct ScrapeReplyEvent {
 /// A tracker scrape failed.
 #[derive(SimpleObject)]
 pub struct ScrapeFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// The URL of the tracker that failed, when known.
     pub tracker_url: Option<String>,
     /// Failure description. Nullable only so that `error` merges across
@@ -493,20 +434,16 @@ pub struct ScrapeFailedEvent {
 /// completed.
 #[derive(SimpleObject)]
 pub struct TorrentDeletedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
 }
 
 /// Payload/partfile deletion after `removeTorrent(deleteFiles: true)`
 /// failed.
 #[derive(SimpleObject)]
 pub struct TorrentDeleteFailedEvent {
-    /// Session-local torrent id.
-    pub torrent_id: u32,
-    /// The torrent's info-hash (v1 preferred).
-    pub info_hash: InfoHash,
+    /// The torrent's durable identifier.
+    pub torrent_uuid: Uuid,
     /// Failure description, when the engine supplied one.
     pub error: Option<String>,
 }

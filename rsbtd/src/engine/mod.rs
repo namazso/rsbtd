@@ -27,11 +27,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rbtorrent::{
-    AddTorrentParams, AlertCategory, InfoHash, RemoveFlags, SaveStateFlags, Session, SessionParams,
-    SettingsPack, TorrentFlags, TorrentHandle,
+    AddTorrentParams, AlertCategory, ClientData as _, InfoHash, RemoveFlags, SaveStateFlags,
+    Session, SessionParams, SettingsPack, TorrentFlags, TorrentHandle,
 };
 use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
+use uuid::Uuid;
 
 use crate::config::Config;
 use client_data::RsbtData;
@@ -159,35 +160,31 @@ impl Inflight {
     }
 }
 
-/// Torrent ids whose durable resume state is uncertain after a failed
+/// Torrents whose durable resume state is uncertain after a failed
 /// resume write. The pump re-requests these saves, shutdown includes them
-/// in the final flush, and the persister clears an id once a write lands.
+/// in the final flush, and the persister clears an entry once a write lands.
 #[derive(Default)]
-pub struct DirtyResume(Mutex<HashSet<u32>>);
+pub struct DirtyResume(Mutex<HashSet<Uuid>>);
 
 impl DirtyResume {
-    pub fn insert(&self, id: u32) {
-        self.0.lock().unwrap().insert(id);
+    pub fn insert(&self, uuid: Uuid) {
+        self.0.lock().unwrap().insert(uuid);
     }
 
-    pub fn remove(&self, id: u32) {
-        self.0.lock().unwrap().remove(&id);
+    pub fn remove(&self, uuid: Uuid) {
+        self.0.lock().unwrap().remove(&uuid);
     }
 
-    pub fn contains(&self, id: u32) -> bool {
-        self.0.lock().unwrap().contains(&id)
+    pub fn contains(&self, uuid: Uuid) -> bool {
+        self.0.lock().unwrap().contains(&uuid)
     }
 
     pub fn is_empty(&self) -> bool {
         self.0.lock().unwrap().is_empty()
     }
 
-    pub fn snapshot(&self) -> Vec<u32> {
+    pub fn snapshot(&self) -> Vec<Uuid> {
         self.0.lock().unwrap().iter().copied().collect()
-    }
-
-    pub fn extend(&self, ids: impl IntoIterator<Item = u32>) {
-        self.0.lock().unwrap().extend(ids);
     }
 }
 
@@ -214,6 +211,11 @@ pub struct Engine {
     state_interest: Arc<AtomicUsize>,
     jobs: jobs::JobManager,
     grace: Duration,
+    /// Removals-with-delete in flight: deletion alerts identify torrents
+    /// only by info-hash (dead handle, no token), so the initiator parks
+    /// the (hashes, uuid) pair here and the pump re-attributes the alert
+    /// by hash overlap.
+    pending_deletes: Arc<Mutex<Vec<(InfoHash, Uuid)>>>,
     /// Serializes correlated operations whose response alerts carry no
     /// request key (see [`OpClass`]): otherwise two concurrent moves on
     /// one torrent would both resolve from the first `StorageMoved` alert.
@@ -236,7 +238,7 @@ enum OpClass {
 }
 
 /// Per-(torrent, class) locks; weak so a lock dies with its last holder.
-type OpLocks = Mutex<HashMap<(u32, OpClass), std::sync::Weak<tokio::sync::Mutex<()>>>>;
+type OpLocks = Mutex<HashMap<(Uuid, OpClass), std::sync::Weak<tokio::sync::Mutex<()>>>>;
 
 /// Keeps the state-update ticker running while a subscriber exists
 /// (obtained from [`Engine::state_interest`]; drop to release).
@@ -328,6 +330,8 @@ impl Engine {
             Arc::clone(&dirty),
         ));
 
+        let pending_deletes = Arc::new(Mutex::new(Vec::new()));
+
         let pump_task = tokio::spawn(pump::run(pump::PumpCtx {
             session: Arc::clone(&session),
             registry: Arc::clone(&registry),
@@ -336,6 +340,7 @@ impl Engine {
             inflight: Arc::clone(&inflight),
             dirty: Arc::clone(&dirty),
             quiesce: Arc::clone(&quiesce),
+            pending_deletes: Arc::clone(&pending_deletes),
             shutdown: pump_shutdown_rx,
         }));
 
@@ -371,6 +376,7 @@ impl Engine {
             state_interest,
             jobs: jobs::JobManager::new(),
             grace: Duration::from_secs(config.shutdown_grace_secs),
+            pending_deletes,
             op_locks: Mutex::new(HashMap::new()),
             session_state_lock: tokio::sync::Mutex::new(()),
             shutdown_token: tokio_util::sync::CancellationToken::new(),
@@ -382,11 +388,14 @@ impl Engine {
 
     /// Re-adds every torrent persisted in the state directory.
     ///
-    /// A resume file's key can drift from its stem: a hybrid added via a
-    /// v2-only magnet is keyed v2, but once its v1 hash is persisted,
-    /// [`registry::resume_key`] is v1. Rename to the canonical key
-    /// *before* the add — otherwise removal would miss the stale v2 file,
-    /// which would resurrect the torrent on the next restart.
+    /// Files are canonicalized to `<uuid>.resume` before the add. Legacy
+    /// records written before uuids existed get one minted and spliced
+    /// into the record — durably, **under the old name first**, then
+    /// renamed: whichever step a crash interrupts, the next restore either
+    /// reads the uuid back from the old-named file or re-mints one nobody
+    /// has ever observed. The rename precedes the add so removal cannot
+    /// miss a stale file, which would resurrect the torrent on the next
+    /// restart.
     async fn restore(&self) -> Result<(), EngineError> {
         let session = self.session()?;
         let mut adds = Vec::new();
@@ -405,39 +414,91 @@ impl Engine {
                     continue;
                 }
             };
-            match Session::read_resume_data_with::<RsbtData>(&bytes, None) {
-                Ok((atp, data)) => {
-                    let canonical = self
-                        .paths
-                        .resume_file(&registry::resume_key(&atp.info_hashes()));
-                    if path != canonical
-                        && let Err(e) = tokio::fs::rename(&path, &canonical).await
-                    {
-                        tracing::warn!(
-                            "cannot canonicalize {} to {}: {e}; skipping it",
-                            path.display(),
-                            canonical.display()
-                        );
-                        continue;
-                    }
-                    adds.push(session.add_torrent(&atp, Arc::new(data)));
-                }
+            let (atp, raw) = match Session::read_resume_data(&bytes, None) {
+                Ok(parsed) => parsed,
                 Err(e) => {
                     tracing::warn!("corrupt resume data {}: {e}", path.display());
                     quarantine(&path).await;
+                    continue;
                 }
+            };
+            let data = match RsbtData::from_bencode(raw.as_deref()) {
+                Ok(data) => data,
+                Err(e) => {
+                    tracing::warn!("corrupt resume data {}: {e}", path.display());
+                    quarantine(&path).await;
+                    continue;
+                }
+            };
+            let uuid = data.uuid;
+            if raw.is_none() {
+                // Legacy pre-uuid record: make the minted uuid durable in
+                // place before renaming (see the doc comment).
+                let spliced = match Session::write_resume_data_with(&atp, &data) {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        tracing::warn!(
+                            "cannot rewrite legacy resume data {}: {e}; skipping it",
+                            path.display()
+                        );
+                        continue;
+                    }
+                };
+                let target = path.clone();
+                let write =
+                    tokio::task::spawn_blocking(move || persist::write_atomic(&target, &spliced))
+                        .await
+                        .unwrap_or_else(|e| Err(std::io::Error::other(e)));
+                if let Err(e) = write {
+                    tracing::warn!(
+                        "cannot rewrite legacy resume data {}: {e}; skipping it",
+                        path.display()
+                    );
+                    continue;
+                }
+                tracing::info!("assigned uuid {uuid} to {}", path.display());
             }
+            let canonical = self.paths.resume_file(&uuid.to_string());
+            if path != canonical
+                && let Err(e) = tokio::fs::rename(&path, &canonical).await
+            {
+                tracing::warn!(
+                    "cannot canonicalize {} to {}: {e}; skipping it",
+                    path.display(),
+                    canonical.display()
+                );
+                continue;
+            }
+            adds.push((uuid, session.add_torrent(&atp, Arc::new(data))));
         }
         // All adds were already posted; sequential draining loses no concurrency.
         let mut restored = 0usize;
-        for add in adds {
-            match add.await {
-                Ok(handle) => {
-                    self.registry.upsert(handle.id(), handle.info_hashes());
-                    restored += 1;
+        for (uuid, add) in adds {
+            let handle = match add.await {
+                Ok(handle) => handle,
+                Err(e) => {
+                    tracing::warn!(%uuid, "cannot restore torrent: {e}");
+                    continue;
                 }
-                Err(e) => tracing::warn!("cannot restore torrent: {e}"),
+            };
+            let token = match handle.client_data_token() {
+                Ok(token) => token,
+                Err(e) => {
+                    tracing::warn!(%uuid, "cannot restore torrent: {e}");
+                    continue;
+                }
+            };
+            let entry = self.registry.upsert(handle.id(), token, uuid);
+            if entry.uuid != uuid {
+                // Two resume records resolved to one torrent: the first
+                // file won; drop the loser so it cannot linger as an orphan.
+                let loser = self.paths.resume_file(&uuid.to_string());
+                if let Err(e) = tokio::fs::remove_file(&loser).await {
+                    tracing::warn!("cannot delete duplicate {}: {e}", loser.display());
+                }
+                continue;
             }
+            restored += 1;
         }
         if restored > 0 {
             tracing::info!("restored {restored} torrent(s)");
@@ -469,7 +530,7 @@ impl Engine {
     ) -> Result<T, EngineError> {
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         Ok(f(&handle))
     }
@@ -520,10 +581,19 @@ impl Engine {
     ) -> Result<Arc<TorrentEntry>, EngineError> {
         atp.set_flags(atp.flags() | TorrentFlags::DUPLICATE_IS_ERROR);
         let session = self.session()?;
-        let handle = session
-            .add_torrent(atp, Arc::new(RsbtData::default()))
-            .await?;
-        let entry = self.registry.upsert(handle.id(), handle.info_hashes());
+        let data = RsbtData::new();
+        let uuid = data.uuid;
+        let handle = session.add_torrent(atp, Arc::new(data)).await?;
+        let token = match handle.client_data_token() {
+            Ok(token) => token,
+            // Fresh handles are valid; failing means the torrent vanished
+            // under us — undo the add with the handle we still hold.
+            Err(e) => {
+                handle.remove(RemoveFlags::empty());
+                return Err(e.into());
+            }
+        };
+        let entry = self.registry.upsert(handle.id(), token, uuid);
         // The initial resume record comes from the original params: the
         // add alert's copy is libtorrent's selected-field snapshot, which
         // would downgrade the record (no trackers, web seeds, limits,
@@ -543,11 +613,7 @@ impl Engine {
         self.inflight.inc();
         if self
             .enqueue_persist_durable(PersistOp::WriteResume {
-                resume_key: entry.resume_key.clone(),
-                torrent: TorrentRef {
-                    id: entry.id,
-                    info_hash: entry.info_hash,
-                },
+                torrent: TorrentRef { uuid: entry.uuid },
                 bytes,
                 ack: Some(ack_tx),
             })
@@ -575,11 +641,9 @@ impl Engine {
         // enqueued its DeleteResume ahead of our write. Sends are FIFO,
         // so a delete enqueued later orders behind our write; this
         // compensates the other interleaving.
-        if self.registry.get(entry.id).is_none() {
+        if self.registry.find(&entry.uuid).is_none() {
             let _ = self
-                .enqueue_persist_durable(PersistOp::DeleteResume {
-                    resume_key: entry.resume_key.clone(),
-                })
+                .enqueue_persist_durable(PersistOp::DeleteResume { uuid: entry.uuid })
                 .await;
         }
         Ok(entry)
@@ -590,10 +654,10 @@ impl Engine {
     /// told the add failed, so neither the session nor the registry may
     /// keep the torrent.
     fn unwind_failed_add(&self, entry: &TorrentEntry) {
-        self.dirty.remove(entry.id);
+        self.dirty.remove(entry.uuid);
         self.registry.remove_by_id(entry.id);
         if let Ok(session) = self.session()
-            && let Some(handle) = session.find_torrent(entry.info_hash)
+            && let Some(handle) = session.find_torrent_by_token(entry.token)
         {
             handle.remove(RemoveFlags::empty());
         }
@@ -601,26 +665,28 @@ impl Engine {
 
     /// Removes a torrent and waits until the session has dropped it. With
     /// `delete_files`, success also means the files are actually gone.
-    pub async fn remove_torrent(
-        &self,
-        info_hash: &InfoHash,
-        delete_files: bool,
-    ) -> Result<(), EngineError> {
-        let entry = self.registry.find(info_hash).ok_or(EngineError::NotFound)?;
+    pub async fn remove_torrent(&self, uuid: &Uuid, delete_files: bool) -> Result<(), EngineError> {
+        let entry = self.registry.find(uuid).ok_or(EngineError::NotFound)?;
         let session = self.session()?;
         let flags = if delete_files {
             RemoveFlags::DELETE_FILES | RemoveFlags::DELETE_PARTFILE
         } else {
             RemoveFlags::empty()
         };
-        let id = entry.id;
-        // TorrentDeleted/TorrentDeleteFailed arrive after the registry
-        // entry is gone and carry id 0, so match by info-hash.
-        let hash = entry.info_hash;
+        let uuid = entry.uuid;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
-        correlate::request(
+        if delete_files {
+            // Deletion alerts identify the torrent only by info-hash (the
+            // handle is dead by then, and they carry no token); park the
+            // pair for the pump to re-attribute the alert.
+            self.pending_deletes
+                .lock()
+                .unwrap()
+                .push((handle.info_hashes(), uuid));
+        }
+        let result = correlate::request(
             &self.events,
             &self.shutdown_token,
             move || {
@@ -628,13 +694,7 @@ impl Engine {
                 Ok(())
             },
             move |e| {
-                // Deletion alerts arrive after the registry entry is gone
-                // (id 0) and carry libtorrent's hash set, which may be
-                // wider than the one captured at insertion — overlap, not
-                // equality, identifies the torrent.
-                if !correlate::is_torrent(e, id)
-                    && !e.torrent.is_some_and(|t| t.info_hash.overlaps(&hash))
-                {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 match &e.kind {
@@ -653,15 +713,24 @@ impl Engine {
             },
             correlate::DEFAULT_TIMEOUT,
         )
-        .await
+        .await;
+        if delete_files {
+            // The pump consumes the entry when the deletion alert lands;
+            // this covers the timeout/error paths so nothing lingers.
+            let mut pending = self.pending_deletes.lock().unwrap();
+            if let Some(i) = pending.iter().position(|(_, u)| *u == uuid) {
+                pending.swap_remove(i);
+            }
+        }
+        result
     }
 
     /// Generates and persists resume data for one torrent now.
     pub async fn save_resume_data(&self, entry: &TorrentEntry) -> Result<(), EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         let inflight = Arc::clone(&self.inflight);
         correlate::request(
@@ -679,7 +748,7 @@ impl Engine {
                 Ok(())
             },
             |e| {
-                if !correlate::is_torrent(e, id) {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 match &e.kind {
@@ -809,24 +878,24 @@ impl Engine {
 
     /// The serialization lock for one `(torrent, operation-class)` pair,
     /// created on demand (the map holds weak refs and prunes dead ones).
-    fn op_lock(&self, id: u32, class: OpClass) -> Arc<tokio::sync::Mutex<()>> {
+    fn op_lock(&self, uuid: Uuid, class: OpClass) -> Arc<tokio::sync::Mutex<()>> {
         let mut locks = self.op_locks.lock().unwrap();
         locks.retain(|_, weak| weak.strong_count() > 0);
-        match locks.get(&(id, class)).and_then(std::sync::Weak::upgrade) {
+        match locks.get(&(uuid, class)).and_then(std::sync::Weak::upgrade) {
             Some(lock) => lock,
             None => {
                 let lock = Arc::new(tokio::sync::Mutex::new(()));
-                locks.insert((id, class), Arc::downgrade(&lock));
+                locks.insert((uuid, class), Arc::downgrade(&lock));
                 lock
             }
         }
     }
 
     pub async fn trackers(&self, entry: &TorrentEntry) -> Result<Vec<TrackerInfo>, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request(
             &self.events,
@@ -836,7 +905,9 @@ impl Engine {
                 Ok(())
             },
             |e| match &e.kind {
-                EventKind::Trackers(list) if correlate::is_torrent(e, id) => Some(Ok(list.clone())),
+                EventKind::Trackers(list) if correlate::is_torrent(e, uuid) => {
+                    Some(Ok(list.clone()))
+                }
                 _ => None,
             },
             correlate::DEFAULT_TIMEOUT,
@@ -845,10 +916,10 @@ impl Engine {
     }
 
     pub async fn peers(&self, entry: &TorrentEntry) -> Result<Vec<PeerSnapshot>, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request(
             &self.events,
@@ -858,7 +929,7 @@ impl Engine {
                 Ok(())
             },
             |e| match &e.kind {
-                EventKind::Peers(list) if correlate::is_torrent(e, id) => {
+                EventKind::Peers(list) if correlate::is_torrent(e, uuid) => {
                     Some(Ok(list.iter().map(PeerSnapshot::from_info).collect()))
                 }
                 _ => None,
@@ -877,27 +948,27 @@ impl Engine {
         path: &str,
         mode: u32,
     ) -> Result<String, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let path = path.to_owned();
         // StorageMoved alerts carry no request key: a concurrent move
         // would consume this one's response. Find the handle after the
         // lock so a removed-while-queued torrent gets NotFound, not a timeout.
-        let guard = self.op_lock(id, OpClass::MoveStorage).lock_owned().await;
+        let guard = self.op_lock(uuid, OpClass::MoveStorage).lock_owned().await;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request_serialized(
             &self.events,
             &self.shutdown_token,
             guard,
-            id,
+            uuid,
             move || {
                 handle.move_storage(&path, mode);
                 Ok(())
             },
             move |e| {
-                if !correlate::is_torrent(e, id) {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 match &e.kind {
@@ -918,26 +989,26 @@ impl Engine {
         index: i32,
         name: &str,
     ) -> Result<String, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let name = name.to_owned();
         // FileRenamed alerts carry the index but not the requested name:
         // concurrent renames of one index would collide (see move_storage).
-        let guard = self.op_lock(id, OpClass::RenameFile).lock_owned().await;
+        let guard = self.op_lock(uuid, OpClass::RenameFile).lock_owned().await;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request_serialized(
             &self.events,
             &self.shutdown_token,
             guard,
-            id,
+            uuid,
             move || {
                 handle.rename_file(index, &name)?;
                 Ok(())
             },
             move |e| {
-                if !correlate::is_torrent(e, id) {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 match &e.kind {
@@ -960,10 +1031,10 @@ impl Engine {
         entry: &TorrentEntry,
         piece: i32,
     ) -> Result<Vec<u8>, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request(
             &self.events,
@@ -973,7 +1044,7 @@ impl Engine {
                 Ok(())
             },
             move |e| {
-                if !correlate::is_torrent(e, id) {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 match &e.kind {
@@ -1000,7 +1071,7 @@ impl Engine {
         entry: &TorrentEntry,
         tracker_index: i32,
     ) -> Result<(Option<String>, i32, i32), EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         // Resolve the target tracker URL first: libtorrent silently
         // ignores out-of-range indexes (we would wait out the timeout),
         // and scrape replies carry no request key, so matching by torrent
@@ -1037,22 +1108,22 @@ impl Engine {
             }
         };
         // Find the handle only after the lock (see move_storage).
-        let guard = self.op_lock(id, OpClass::Scrape).lock_owned().await;
+        let guard = self.op_lock(uuid, OpClass::Scrape).lock_owned().await;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request_serialized(
             &self.events,
             &self.shutdown_token,
             guard,
-            id,
+            uuid,
             move || {
                 handle.scrape_tracker(tracker_index);
                 Ok(())
             },
             move |e| {
-                if !correlate::is_torrent(e, id) {
+                if !correlate::is_torrent(e, uuid) {
                     return None;
                 }
                 // A reply without a URL cannot be attributed; accept it
@@ -1095,10 +1166,10 @@ impl Engine {
 
     /// Downloaded byte counts, indexed by file.
     pub async fn file_progress(&self, entry: &TorrentEntry) -> Result<Vec<i64>, EngineError> {
-        let id = entry.id;
+        let uuid = entry.uuid;
         let session = self.session()?;
         let handle = session
-            .find_torrent(entry.info_hash)
+            .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         correlate::request(
             &self.events,
@@ -1108,7 +1179,7 @@ impl Engine {
                 Ok(())
             },
             |e| match &e.kind {
-                EventKind::FileProgress(progress) if correlate::is_torrent(e, id) => {
+                EventKind::FileProgress(progress) if correlate::is_torrent(e, uuid) => {
                     Some(Ok(progress.clone()))
                 }
                 _ => None,
@@ -1133,10 +1204,10 @@ impl Engine {
         // before Arc::into_inner, or graceful close becomes a blocking drop.
         if let Ok(session) = self.session() {
             for entry in self.registry.list() {
-                let Some(handle) = session.find_torrent(entry.info_hash) else {
+                let Some(handle) = session.find_torrent_by_token(entry.token) else {
                     continue;
                 };
-                if handle.need_save_resume_data() || self.dirty.contains(entry.id) {
+                if handle.need_save_resume_data() || self.dirty.contains(entry.uuid) {
                     self.inflight.inc();
                     if !handle.save_resume_data(
                         TorrentHandle::RESUME_SAVE_INFO_DICT
@@ -1384,7 +1455,7 @@ async fn run_sweep(
             _ = async { let _ = shutdown.wait_for(|&stop| stop).await; } => break,
             _ = tick.tick() => {
                 for entry in registry.list() {
-                    let Some(handle) = session.find_torrent(entry.info_hash) else {
+                    let Some(handle) = session.find_torrent_by_token(entry.token) else {
                         continue;
                     };
                     if handle.need_save_resume_data() {

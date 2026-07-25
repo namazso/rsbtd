@@ -17,14 +17,16 @@
 //! voids the engine's invariants and aborts the process, so persist sends
 //! may block — alerts simply accumulate meanwhile.
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rbtorrent::alerts::Alert;
 use rbtorrent::{AlertType, InfoHash, RawAlert, Session, TorrentHandle};
 use tokio::sync::{broadcast, mpsc, watch};
+use uuid::Uuid;
 
+use super::client_data::RsbtData;
 use super::events::{Event, EventKind, TorrentRef, TrackerInfo};
 use super::persist::PersistOp;
 use super::registry::Registry;
@@ -43,6 +45,8 @@ pub(super) struct PumpCtx {
     /// Drain-only mode: keep consuming alerts and persisting responses,
     /// but initiate no resume saves (shutdown owns the final flush).
     pub quiesce: Arc<AtomicBool>,
+    /// Removals-with-delete in flight (see `Engine::pending_deletes`).
+    pub pending_deletes: Arc<Mutex<Vec<(InfoHash, Uuid)>>>,
     pub shutdown: watch::Receiver<bool>,
 }
 
@@ -55,6 +59,7 @@ pub(super) async fn run(ctx: PumpCtx) {
         inflight,
         dirty,
         quiesce,
+        pending_deletes,
         mut shutdown,
     } = ctx;
     // The stream borrows our local Arc clone; both die with this task.
@@ -70,15 +75,15 @@ pub(super) async fn run(ctx: PumpCtx) {
                 // for as much as the persist queue can take right now.
                 if !quiesce.load(Ordering::SeqCst) {
                     let mut budget = persist.capacity();
-                    for id in dirty.snapshot() {
-                        let Some(entry) = registry.get(id) else {
+                    for uuid in dirty.snapshot() {
+                        let Some(entry) = registry.find(&uuid) else {
                             // Removed while marked dirty.
-                            dirty.remove(id);
+                            dirty.remove(uuid);
                             continue;
                         };
-                        let Some(handle) = session.find_torrent(entry.info_hash) else {
+                        let Some(handle) = session.find_torrent_by_token(entry.token) else {
                             // Left the session while marked dirty.
-                            dirty.remove(id);
+                            dirty.remove(uuid);
                             continue;
                         };
                         if budget == 0 {
@@ -88,7 +93,7 @@ pub(super) async fn run(ctx: PumpCtx) {
                         inflight.inc();
                         if !handle.save_resume_data(TorrentHandle::RESUME_SAVE_INFO_DICT) {
                             inflight.dec();
-                            dirty.remove(id);
+                            dirty.remove(uuid);
                         }
                     }
                 }
@@ -103,6 +108,7 @@ pub(super) async fn run(ctx: PumpCtx) {
                             inflight: &inflight,
                             dirty: &dirty,
                             quiesce: &quiesce,
+                            pending_deletes: &pending_deletes,
                             ops: Vec::new(),
                         };
                         for alert in batch.iter() {
@@ -137,6 +143,7 @@ struct BatchState<'e> {
     inflight: &'e Inflight,
     dirty: &'e DirtyResume,
     quiesce: &'e AtomicBool,
+    pending_deletes: &'e Mutex<Vec<(InfoHash, Uuid)>>,
     ops: Vec<PersistOp>,
 }
 
@@ -149,39 +156,44 @@ impl BatchState<'_> {
                     return;
                 }
                 let handle = a.handle();
-                let entry = self.registry.upsert(handle.id(), handle.info_hashes());
-                let torrent = TorrentRef {
-                    id: entry.id,
-                    info_hash: entry.info_hash,
+                let (Ok(token), Ok(data)) = (
+                    handle.client_data_token(),
+                    handle.client_data_as::<RsbtData>(),
+                ) else {
+                    // The torrent vanished before this batch was handled;
+                    // nothing to register (its removal alert follows).
+                    return;
                 };
+                let entry = self.registry.upsert(handle.id(), token, data.uuid);
                 // No resume write here: the alert's params are libtorrent's
                 // selected-field snapshot, not full resume state, and this
                 // arm also runs for restores, whose on-disk records must
                 // stay untouched. Engine::add_torrent persists the initial
                 // record for new adds from the original params.
-                self.publish(Some(torrent), EventKind::TorrentAdded);
+                self.publish(
+                    Some(TorrentRef { uuid: entry.uuid }),
+                    EventKind::TorrentAdded,
+                );
             }
             Alert::TorrentRemoved(a) => {
-                let info_hash = a.info_hashes();
-                let torrent = match self.registry.remove_by_hash(&info_hash) {
+                match self.registry.remove_by_token(a.client_data_token()) {
                     Some(entry) => {
-                        self.dirty.remove(entry.id);
-                        self.ops.push(PersistOp::DeleteResume {
-                            resume_key: entry.resume_key.clone(),
-                        });
-                        TorrentRef {
-                            id: entry.id,
-                            info_hash: entry.info_hash,
-                        }
+                        self.dirty.remove(entry.uuid);
+                        self.ops.push(PersistOp::DeleteResume { uuid: entry.uuid });
+                        self.publish(
+                            Some(TorrentRef { uuid: entry.uuid }),
+                            EventKind::TorrentRemoved,
+                        );
                     }
-                    None => TorrentRef { id: 0, info_hash },
-                };
-                self.publish(Some(torrent), EventKind::TorrentRemoved);
+                    // Never registered (e.g. an unwound failed add): the
+                    // removal cannot be attributed to a torrent.
+                    None => self.publish(None, EventKind::TorrentRemoved),
+                }
             }
             Alert::TorrentFinished(a) => {
                 if let Some(torrent) = self.torrent_of(a) {
                     self.request_save(
-                        torrent.id,
+                        torrent.uuid,
                         TorrentHandle::RESUME_SAVE_INFO_DICT
                             | TorrentHandle::RESUME_FLUSH_DISK_CACHE,
                     );
@@ -193,14 +205,13 @@ impl BatchState<'_> {
                     self.inflight.dec();
                     return;
                 };
-                let Some(entry) = self.registry.get(torrent.id) else {
+                if self.registry.find(&torrent.uuid).is_none() {
                     // Removed while the save was in flight.
                     self.inflight.dec();
                     return;
-                };
+                }
                 match a.write_resume_data() {
                     Ok(bytes) => self.ops.push(PersistOp::WriteResume {
-                        resume_key: entry.resume_key.clone(),
                         torrent,
                         bytes,
                         ack: None,
@@ -278,7 +289,7 @@ impl BatchState<'_> {
                     // move branch never sets libtorrent's need-save flag, so
                     // neither the sweep nor the shutdown flush would ever
                     // persist the new path.
-                    self.request_save(t.id, TorrentHandle::RESUME_SAVE_INFO_DICT);
+                    self.request_save(t.uuid, TorrentHandle::RESUME_SAVE_INFO_DICT);
                 }
                 self.publish(
                     torrent,
@@ -349,15 +360,12 @@ impl BatchState<'_> {
                 );
             }
             Alert::TorrentDeleted(a) => {
-                let torrent = self.torrent_by_hash(a.info_hashes());
-                self.publish(Some(torrent), EventKind::TorrentDeleted);
+                let torrent = self.take_pending_delete(&a.info_hashes());
+                self.publish(torrent, EventKind::TorrentDeleted);
             }
             Alert::TorrentDeleteFailed(a) => {
-                let torrent = self.torrent_by_hash(a.info_hashes());
-                self.publish(
-                    Some(torrent),
-                    EventKind::TorrentDeleteFailed { error: a.error() },
-                );
+                let torrent = self.take_pending_delete(&a.info_hashes());
+                self.publish(torrent, EventKind::TorrentDeleteFailed { error: a.error() });
             }
             Alert::AlertsDropped(a) => {
                 // The queue is pinned to i32::MAX (see ALERT_QUEUE_SIZE),
@@ -382,20 +390,16 @@ impl BatchState<'_> {
                 self.publish(None, EventKind::SessionError { error });
             }
             Alert::Other(raw) if raw.alert_type() == Some(AlertType::MetadataReceived) => {
-                if let Some(handle) = raw.torrent_handle() {
-                    let id = handle.id();
-                    if let Some(entry) = self.registry.reindex(id, handle.info_hashes()) {
-                        // Persist the freshly arrived metadata with the
-                        // resume data so a restart re-adds a full torrent.
-                        self.request_save(id, TorrentHandle::RESUME_SAVE_INFO_DICT);
-                        self.publish(
-                            Some(TorrentRef {
-                                id,
-                                info_hash: entry.info_hash,
-                            }),
-                            EventKind::MetadataReceived,
-                        );
-                    }
+                if let Some(handle) = raw.torrent_handle()
+                    && let Some(entry) = self.registry.get(handle.id())
+                {
+                    // Persist the freshly arrived metadata with the
+                    // resume data so a restart re-adds a full torrent.
+                    self.request_save(entry.uuid, TorrentHandle::RESUME_SAVE_INFO_DICT);
+                    self.publish(
+                        Some(TorrentRef { uuid: entry.uuid }),
+                        EventKind::MetadataReceived,
+                    );
                 }
             }
             _ => {}
@@ -409,12 +413,12 @@ impl BatchState<'_> {
     /// Requests resume data for a registered torrent, counting it in flight.
     /// No-op while quiescing: shutdown owns the final flush, and a save
     /// initiated here could complete after shutdown stops waiting.
-    fn request_save(&self, id: u32, flags: u32) {
+    fn request_save(&self, uuid: Uuid, flags: u32) {
         if self.quiesce.load(Ordering::SeqCst) {
             return;
         }
-        if let Some(entry) = self.registry.get(id) {
-            let Some(handle) = self.session.find_torrent(entry.info_hash) else {
+        if let Some(entry) = self.registry.find(&uuid) {
+            let Some(handle) = self.session.find_torrent_by_token(entry.token) else {
                 return;
             };
             // Inc before posting; undo a refused post (an expired
@@ -429,21 +433,25 @@ impl BatchState<'_> {
     /// The torrent an alert belongs to, via its (still valid) handle.
     fn torrent_of(&self, raw: &RawAlert<'_>) -> Option<TorrentRef> {
         let handle = raw.torrent_handle()?;
-        let id = handle.id();
-        if id == 0 {
+        if handle.id() == 0 {
             return None;
         }
-        let info_hash = match self.registry.get(id) {
-            Some(entry) => entry.info_hash,
-            None => handle.info_hashes(),
+        let uuid = match self.registry.get(handle.id()) {
+            Some(entry) => entry.uuid,
+            // Not registered (yet): fall back to the attached client data.
+            None => handle.client_data_as::<RsbtData>().ok()?.uuid,
         };
-        Some(TorrentRef { id, info_hash })
+        Some(TorrentRef { uuid })
     }
 
-    /// A torrent ref from an alert carrying info-hashes directly (for
-    /// alerts whose handle may already be invalid, e.g. post-removal).
-    fn torrent_by_hash(&self, info_hash: InfoHash) -> TorrentRef {
-        let id = self.registry.find(&info_hash).map_or(0, |entry| entry.id);
-        TorrentRef { id, info_hash }
+    /// Consumes the pending-delete entry matching `hashes` (recorded by
+    /// `Engine::remove_torrent`): deletion alerts carry libtorrent's hash
+    /// set, which may be wider than the one captured at removal — overlap,
+    /// not equality, identifies the torrent.
+    fn take_pending_delete(&self, hashes: &InfoHash) -> Option<TorrentRef> {
+        let mut pending = self.pending_deletes.lock().unwrap();
+        let i = pending.iter().position(|(h, _)| h.overlaps(hashes))?;
+        let (_, uuid) = pending.swap_remove(i);
+        Some(TorrentRef { uuid })
     }
 }
