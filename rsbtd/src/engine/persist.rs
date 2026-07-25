@@ -247,6 +247,21 @@ mod tests {
     /// content is exactly one payload, and no temp files are left behind.
     #[test]
     fn write_atomic_concurrent_writers_do_not_corrupt() {
+        // On Windows, opening the target while another thread's rename is
+        // superseding it can transiently fail with ERROR_ACCESS_DENIED
+        // (the replaced file is delete-pending), so the read retries.
+        fn read_current(path: &Path) -> Vec<u8> {
+            for _ in 0..100 {
+                match std::fs::read(path) {
+                    Err(e) if cfg!(windows) && e.kind() == std::io::ErrorKind::PermissionDenied => {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                    result => return result.unwrap(),
+                }
+            }
+            std::fs::read(path).unwrap()
+        }
+
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("file.bin");
         let payloads: Vec<Vec<u8>> = (0u8..8).map(|i| vec![i; 4096]).collect();
@@ -255,7 +270,7 @@ mod tests {
                 scope.spawn(|| {
                     for _ in 0..20 {
                         write_atomic(&path, payload).unwrap();
-                        let read = std::fs::read(&path).unwrap();
+                        let read = read_current(&path);
                         assert!(payloads.contains(&read), "torn or mixed write observed");
                     }
                 });

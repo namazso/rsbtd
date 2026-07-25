@@ -70,6 +70,12 @@ const MAX_PENDING_WS: usize = 64;
 /// force large buffers before the token is ever checked.
 const WS_MESSAGE_LIMIT: usize = 64 * 1024;
 
+/// After a server-initiated close frame, how long to keep reading for the
+/// client's close reply before dropping the socket. Dropping with inbound
+/// data still unread aborts the connection (TCP RST), which can discard
+/// the close frame before the client reads it (observed on Windows).
+const WS_CLOSE_GRACE: Duration = Duration::from_secs(3);
+
 pub type ApiSchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
 /// Builds the GraphQL schema over a running engine.
@@ -258,15 +264,15 @@ async fn graphql_ws(
                     let (mut sink, stream) = socket.split();
                 // End the inbound stream at shutdown so serve() winds down.
                 let mut stopping = shutdown.clone();
-                let stream = stream.take_until(Box::pin(async move {
+                let mut stream = stream.take_until(Box::pin(async move {
                     let _ = stopping.wait_for(|&stop| stop).await;
                 }));
                 let (init_tx, init_rx) = tokio::sync::oneshot::channel::<()>();
-                // The block scopes `serve` (and its borrow of the sink)
-                // so the close frames below can use the sink directly.
+                // The block scopes `serve` (and its borrows of the sink and
+                // stream) so the close handshake below can use them directly.
                 let timed_out = {
                     let serve =
-                        GraphQLWebSocket::new_with_pair(&mut sink, stream, schema, protocol)
+                        GraphQLWebSocket::new_with_pair(&mut sink, &mut stream, schema, protocol)
                             .on_connection_init(move |payload| {
                                 // Initialized: stop counting against the
                                 // pending cap and disarm the deadline.
@@ -300,20 +306,37 @@ async fn graphql_ws(
                         }
                     }
                 };
-                    if timed_out {
-                        let _ = sink
-                            .send(Message::Close(Some(CloseFrame {
-                                code: close_code::POLICY,
-                                reason: "connection_init was not received in time".into(),
-                            })))
-                            .await;
+                    let close_sent = if timed_out {
+                        sink.send(Message::Close(Some(CloseFrame {
+                            code: close_code::POLICY,
+                            reason: "connection_init was not received in time".into(),
+                        })))
+                        .await
+                        .is_ok()
                     } else if *shutdown.borrow() {
-                        let _ = sink
-                            .send(Message::Close(Some(CloseFrame {
-                                code: close_code::AWAY,
-                                reason: "the daemon is shutting down".into(),
-                            })))
-                            .await;
+                        sink.send(Message::Close(Some(CloseFrame {
+                            code: close_code::AWAY,
+                            reason: "the daemon is shutting down".into(),
+                        })))
+                        .await
+                        .is_ok()
+                    } else {
+                        false
+                    };
+                    if close_sent {
+                        // Wait (briefly) for the client's close reply before
+                        // dropping the socket, so the close frame is not lost
+                        // to an abortive close. Read the raw stream: after
+                        // shutdown the take_until wrapper only yields None.
+                        let mut stream = stream.into_inner();
+                        let drained = async {
+                            while let Some(msg) = stream.next().await {
+                                if matches!(msg, Ok(Message::Close(_)) | Err(_)) {
+                                    break;
+                                }
+                            }
+                        };
+                        let _ = tokio::time::timeout(WS_CLOSE_GRACE, drained).await;
                     }
                 };
                 tokio::select! {
