@@ -13,6 +13,7 @@
 //! value). Fire-and-forget operations are matched to their response
 //! alerts via [`correlate`].
 
+pub mod client_data;
 pub mod correlate;
 pub mod events;
 pub mod jobs;
@@ -33,6 +34,7 @@ use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::config::Config;
+use client_data::RsbtData;
 use events::{Event, EventKind, TorrentRef, TrackerInfo};
 use persist::{PersistOp, StatePaths};
 use registry::{Registry, TorrentEntry};
@@ -403,8 +405,8 @@ impl Engine {
                     continue;
                 }
             };
-            match Session::read_resume_data(&bytes, None) {
-                Ok(atp) => {
+            match Session::read_resume_data_with::<RsbtData>(&bytes, None) {
+                Ok((atp, data)) => {
                     let canonical = self
                         .paths
                         .resume_file(&registry::resume_key(&atp.info_hashes()));
@@ -418,7 +420,7 @@ impl Engine {
                         );
                         continue;
                     }
-                    adds.push(session.add_torrent(&atp));
+                    adds.push(session.add_torrent(&atp, Arc::new(data)));
                 }
                 Err(e) => {
                     tracing::warn!("corrupt resume data {}: {e}", path.display());
@@ -518,16 +520,19 @@ impl Engine {
     ) -> Result<Arc<TorrentEntry>, EngineError> {
         atp.set_flags(atp.flags() | TorrentFlags::DUPLICATE_IS_ERROR);
         let session = self.session()?;
-        let handle = session.add_torrent(atp).await?;
+        let handle = session
+            .add_torrent(atp, Arc::new(RsbtData::default()))
+            .await?;
         let entry = self.registry.upsert(handle.id(), handle.info_hashes());
         // The initial resume record comes from the original params: the
         // add alert's copy is libtorrent's selected-field snapshot, which
         // would downgrade the record (no trackers, web seeds, limits,
-        // priorities, …). Restores never reach this path, so their files
-        // stay untouched. Success is reported only once the record is
-        // durably on disk; otherwise the add is unwound, so an
-        // acknowledged torrent is never silently volatile.
-        let bytes = match Session::write_resume_data(atp) {
+        // priorities, …). Written through the handle so the client data is
+        // embedded. Restores never reach this path, so their files stay
+        // untouched. Success is reported only once the record is durably
+        // on disk; otherwise the add is unwound, so an acknowledged
+        // torrent is never silently volatile.
+        let bytes = match handle.write_resume_data(atp) {
             Ok(bytes) => bytes,
             Err(e) => {
                 self.unwind_failed_add(&entry);

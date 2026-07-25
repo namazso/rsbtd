@@ -25,7 +25,7 @@
 //!     // arrive in any batch (even this early), so inspect every batch.
 //!     let mut finished = false;
 //!     let handle = {
-//!         let add = session.add_torrent(&params);
+//!         let add = session.add_torrent(&params, std::sync::Arc::new(()));
 //!         tokio::pin!(add);
 //!         loop {
 //!             tokio::select! {
@@ -106,6 +106,7 @@
 //! [`Category`], and the rendered message.
 
 pub mod alerts;
+mod client_data;
 pub mod create;
 mod error;
 pub mod filter;
@@ -121,6 +122,7 @@ mod types;
 mod util;
 
 pub use alerts::{Alert, AlertCategory, AlertType, Alerts, Batch, RawAlert};
+pub use client_data::ClientData;
 pub use create::{CreateFlags, CreateTorrent, FileEntry, FileFlags, list_files, set_piece_hashes};
 pub use error::{Category, Error, Result};
 pub use filter::{IpFilter, PortFilter};

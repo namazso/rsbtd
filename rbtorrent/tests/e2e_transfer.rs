@@ -86,7 +86,7 @@ async fn localhost_transfer() {
         );
 
     let _seed_handle = {
-        let seed_add_future = seed_session.add_torrent(&seed_atp);
+        let seed_add_future = seed_session.add_torrent(&seed_atp, std::sync::Arc::new(()));
         tokio::pin!(seed_add_future);
         loop {
             tokio::select! {
@@ -145,7 +145,7 @@ async fn localhost_transfer() {
         );
 
     let leech_handle = {
-        let leech_add_future = leech_session.add_torrent(&leech_atp);
+        let leech_add_future = leech_session.add_torrent(&leech_atp, std::sync::Arc::new(()));
         tokio::pin!(leech_add_future);
         loop {
             tokio::select! {
@@ -269,7 +269,7 @@ async fn localhost_transfer() {
     // field is empty. The bencoded piece bitmask is byte-granular, so the
     // decoded bitfield may carry up to 7 trailing false bits.)
     let resume = Session::write_resume_data(&resume_params).unwrap();
-    let restored = Session::read_resume_data(&resume, None).unwrap();
+    let (restored, _) = Session::read_resume_data(&resume, None).unwrap();
     assert_eq!(restored.info_hashes(), ti.info_hashes());
     let restored_have = restored.have_pieces();
     assert!(restored_have.len() >= have.len());

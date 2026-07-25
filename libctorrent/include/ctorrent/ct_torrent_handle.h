@@ -53,6 +53,10 @@ ct_info_hash ct_torrent_handle_info_hashes(const ct_torrent_handle* handle);
 /* Returns true if this handle is currently tracked by the session. */
 bool ct_torrent_handle_in_session(const ct_torrent_handle* handle);
 
+/* Returns the userdata token the bindings attached at add time (see
+ * ct_session_async_add_torrent). Invalid or expired handles return 0. */
+uint64_t ct_torrent_handle_userdata(const ct_torrent_handle* handle);
+
 /* ---- torrent control ------------------------------------------------------ */
 
 /* Torrent flags are bits of lt::torrent_flags_t; use the CT_TORRENT_FLAG_*

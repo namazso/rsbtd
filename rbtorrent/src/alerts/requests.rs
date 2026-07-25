@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use libctorrent_sys as sys;
 use tokio::sync::oneshot;
 
+use crate::client_data::ClientData;
 use crate::error::Error;
 use crate::handle::RawHandle;
 
@@ -27,6 +28,10 @@ struct Inner {
     // bytes and is re-paired inside `Session::add_torrent`'s future —
     // sound because this Registry is per-session.
     add_torrent: HashMap<u64, oneshot::Sender<Result<RawHandle, Error>>>,
+    // Per-torrent client data, keyed by the same token for the torrent's
+    // whole lifetime. Not a pending request: entries persist until the
+    // torrent_removed sweep (or teardown), and survive close().
+    client_data: HashMap<u64, Arc<dyn ClientData>>,
 }
 
 /// Shared between the `Session` (which enqueues requests) and the `Alerts`
@@ -80,6 +85,7 @@ impl Registry {
 
     pub(crate) fn enqueue_add_torrent(
         &self,
+        data: Arc<dyn ClientData>,
     ) -> Result<(u64, oneshot::Receiver<Result<RawHandle, Error>>), Error> {
         let mut inner = self.inner.lock().unwrap();
         if inner.closed {
@@ -88,12 +94,55 @@ impl Registry {
         let token = self.id();
         let (tx, rx) = oneshot::channel();
         inner.add_torrent.insert(token, tx);
+        // Same critical section as the token mint: the attach in libtorrent
+        // is observed via the add_torrent alert, which `resolve_add_torrent`
+        // only sees on a later `process` — the data is in place first.
+        inner.client_data.insert(token, data);
         Ok((token, rx))
     }
 
+    /// Drops the pending sender only (the drop-guard path): the post
+    /// already happened and is not undone, so the torrent may attach
+    /// regardless — its client data must stay reachable.
     pub(crate) fn cancel_add_torrent(&self, token: u64) {
         let mut inner = self.inner.lock().unwrap();
         inner.add_torrent.remove(&token);
+    }
+
+    /// Rolls back a refused post: the shim rejected the request, so the
+    /// torrent can never attach — reclaim the client data too.
+    pub(crate) fn abort_add_torrent(&self, token: u64) {
+        let data = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.add_torrent.remove(&token);
+            inner.client_data.remove(&token)
+        };
+        // Dropped outside the lock: a user Drop may re-enter the registry.
+        drop(data);
+    }
+
+    pub(crate) fn client_data(&self, token: u64) -> Option<Arc<dyn ClientData>> {
+        self.inner.lock().unwrap().client_data.get(&token).cloned()
+    }
+
+    /// Replaces a live torrent's data. Replace-only by design: inserting
+    /// under an unknown token would resurrect an entry the torrent_removed
+    /// sweep already reclaimed, leaking it for the session's lifetime.
+    pub(crate) fn set_client_data(
+        &self,
+        token: u64,
+        data: Arc<dyn ClientData>,
+    ) -> Result<(), Error> {
+        let old = {
+            let mut inner = self.inner.lock().unwrap();
+            match inner.client_data.get_mut(&token) {
+                Some(slot) => std::mem::replace(slot, data),
+                None => return Err(Error::binding("the torrent was removed")),
+            }
+        };
+        // Dropped outside the lock (see abort_add_torrent).
+        drop(old);
+        Ok(())
     }
     /// Scans a freshly popped batch and resolves matching requests.
     pub(crate) fn process(&self, batch: *mut sys::ct_alert_batch) {
@@ -106,6 +155,8 @@ impl Registry {
                 self.resolve_session_stats(alert);
             } else if ty == sys::CT_ALERT_TYPE_ADD_TORRENT as i32 {
                 self.resolve_add_torrent(alert);
+            } else if ty == sys::CT_ALERT_TYPE_TORRENT_REMOVED as i32 {
+                self.resolve_torrent_removed(alert);
             } else if ty == sys::CT_ALERT_TYPE_ALERTS_DROPPED as i32 {
                 self.handle_alerts_dropped(alert);
             }
@@ -175,7 +226,7 @@ impl Registry {
 
     fn resolve_add_torrent(&self, alert: *const sys::ct_alert) {
         // SAFETY: alert is valid; the view borrows the batch.
-        let (token, result) = unsafe {
+        let (token, surviving, result) = unsafe {
             let mut view = sys::ct_add_torrent_view::default();
             if !sys::ct_alert_as_add_torrent(alert, &mut view) {
                 return;
@@ -188,18 +239,59 @@ impl Registry {
             } else {
                 Ok(RawHandle::from_ptr(view.handle))
             };
-            (token, result)
+            // The client data stays only if the torrent attached under this
+            // token: a failed add never attached, and a duplicate add
+            // resolves to the pre-existing torrent, which kept its original
+            // userdata (the new attempt's data can never be reached again).
+            let surviving = result.is_ok()
+                && sys::ct_torrent_handle_userdata(view.handle) == token;
+            (token, surviving, result)
         };
-        let sender = {
+        // Regardless of sender presence: the future may be long cancelled
+        // (drop-guard) while the data entry still needs error cleanup.
+        let (sender, stale_data) = {
             let mut inner = self.inner.lock().unwrap();
-            inner.add_torrent.remove(&token)
+            let stale_data = if surviving {
+                None
+            } else {
+                inner.client_data.remove(&token)
+            };
+            (inner.add_torrent.remove(&token), stale_data)
         };
+        // Dropped outside the lock: a user Drop may re-enter the registry.
+        drop(stale_data);
         if let Some(sender) = sender {
             let _ = sender.send(result);
         }
     }
 
-    /// Fails every pending request; called on session teardown.
+    /// Reclaims the removed torrent's client data. Best-effort: libtorrent
+    /// can drop the alert on extreme queue overflow (alerts_dropped carries
+    /// no token), leaking the entry until teardown.
+    fn resolve_torrent_removed(&self, alert: *const sys::ct_alert) {
+        // SAFETY: alert is valid within the current batch.
+        let token = unsafe {
+            let mut view = sys::ct_torrent_removed_view::default();
+            if !sys::ct_alert_as_torrent_removed(alert, &mut view) {
+                return;
+            }
+            view.userdata as u64
+        };
+        if token == 0 {
+            return;
+        }
+        let data = {
+            let mut inner = self.inner.lock().unwrap();
+            inner.client_data.remove(&token)
+        };
+        // Dropped outside the lock: a user Drop may re-enter the registry.
+        drop(data);
+    }
+
+    /// Fails every pending request; called on session teardown. Client
+    /// data is deliberately untouched: it belongs to torrents, not pending
+    /// requests, and handles remain usable until the session drops (the
+    /// map dies with the `Arc<Registry>`).
     pub(crate) fn close(&self) {
         // Dropping a sender wakes its receiver; move them out of the lock
         // first (see handle_alerts_dropped).

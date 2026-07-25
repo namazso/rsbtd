@@ -178,7 +178,7 @@ async fn post_responses_have_typed_views() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add = session.add_torrent(&atp);
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         tokio::time::timeout(Duration::from_secs(10), async {
             loop {
@@ -265,7 +265,7 @@ async fn post_responses_have_typed_views() {
     let params = resume.unwrap();
     assert_eq!(params.info_hashes(), atp.info_hashes());
     let blob = Session::write_resume_data(&params).unwrap();
-    let restored = Session::read_resume_data(&blob, None).unwrap();
+    let (restored, _) = Session::read_resume_data(&blob, None).unwrap();
     assert_eq!(restored.info_hashes(), atp.info_hashes());
 
     drop(handle);
@@ -298,8 +298,8 @@ async fn concurrent_add_torrents_resolve_independently() {
     let mut alerts = session.alerts();
 
     let (a, b) = {
-        let add_a = session.add_torrent(&atp_a);
-        let add_b = session.add_torrent(&atp_b);
+        let add_a = session.add_torrent(&atp_a, std::sync::Arc::new(()));
+        let add_b = session.add_torrent(&atp_b, std::sync::Arc::new(()));
         tokio::pin!(add_a, add_b);
 
         let (mut got_a, mut got_b) = (None, None);

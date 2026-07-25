@@ -59,7 +59,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
         let ctrl_c = tokio::signal::ctrl_c();
         tokio::pin!(ctrl_c);
 
-        let add_future = session.add_torrent(&params);
+        let add_future = session.add_torrent(&params, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         let mut finished = false;
         let mut torrent_error: Option<String> = None;

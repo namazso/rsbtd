@@ -17,7 +17,9 @@
 use libctorrent_sys as sys;
 use std::fmt;
 use std::net::SocketAddr;
+use std::sync::Arc;
 
+use crate::client_data::ClientData;
 use crate::params::DownloadPriority;
 use crate::session::{RemoveFlags, Session};
 use crate::types::{InfoHash, socket_addr_to_ct};
@@ -181,6 +183,91 @@ impl TorrentHandle<'_> {
     /// Returns true if this handle is currently tracked by the session.
     pub fn in_session(&self) -> bool {
         unsafe { sys::ct_torrent_handle_in_session(self.as_ptr()) }
+    }
+
+    /// The userdata token the bindings attached at add time, or an error
+    /// for expired handles (whose torrent no longer exists).
+    fn client_data_token(&self) -> Result<u64, crate::Error> {
+        // SAFETY: handle valid; expired handles return 0.
+        let token = unsafe { sys::ct_torrent_handle_userdata(self.as_ptr()) };
+        if token == 0 {
+            return Err(crate::Error::binding("the torrent handle is expired"));
+        }
+        Ok(token)
+    }
+
+    /// The [`ClientData`] attached when the torrent was added (see
+    /// [`Session::add_torrent`]). Errors when the handle is expired or the
+    /// torrent was removed from the session.
+    pub fn client_data(&self) -> Result<Arc<dyn ClientData>, crate::Error> {
+        let token = self.client_data_token()?;
+        self.session
+            .inner()
+            .registry
+            .client_data(token)
+            .ok_or_else(|| crate::Error::binding("the torrent was removed"))
+    }
+
+    /// [`client_data`](TorrentHandle::client_data) downcast to its concrete
+    /// type; errors additionally when the stored data is not a `T`.
+    pub fn client_data_as<T: ClientData>(&self) -> Result<Arc<T>, crate::Error> {
+        let data: Arc<dyn std::any::Any + Send + Sync> = self.client_data()?;
+        data.downcast::<T>()
+            .map_err(|_| crate::Error::binding("the client data has a different type"))
+    }
+
+    /// Replaces the torrent's [`ClientData`] (an `Arc` swap; it is
+    /// persisted by the next resume-data write). Errors when the handle is
+    /// expired or the torrent was removed from the session.
+    pub fn set_client_data(&self, data: Arc<dyn ClientData>) -> Result<(), crate::Error> {
+        let token = self.client_data_token()?;
+        self.session.inner().registry.set_client_data(token, data)
+    }
+
+    /// Serializes `params` like
+    /// [`Session::write_resume_data`](Session::write_resume_data),
+    /// additionally embedding this torrent's [`ClientData`] under the
+    /// resume data's `"rbt-data"` key. Degrades to the plain serialization
+    /// (no key) when the handle is expired, the torrent was removed, or
+    /// the data serializes to nothing.
+    pub fn write_resume_data(
+        &self,
+        params: &crate::params::AddTorrentParams,
+    ) -> Result<Vec<u8>, crate::Error> {
+        // SAFETY: handle valid; expired handles return 0.
+        let token = unsafe { sys::ct_torrent_handle_userdata(self.as_ptr()) };
+        let blob = if token == 0 {
+            Vec::new()
+        } else {
+            self.session
+                .inner()
+                .registry
+                .client_data(token)
+                // to_bencode runs outside the registry lock.
+                .map(|data| data.to_bencode())
+                .unwrap_or_default()
+        };
+        // SAFETY: params and blob are valid; on success we own the buffer
+        // and must free it. An empty blob writes no "rbt-data" key.
+        let mut buf = crate::error::with_error(|err| unsafe {
+            sys::ct_write_resume_data_buf_ex(
+                params.as_ptr(),
+                sys::ct_span {
+                    ptr: blob.as_ptr(),
+                    len: blob.len(),
+                },
+                err,
+            )
+        })?;
+        let bytes = if buf.ptr.is_null() {
+            Vec::new()
+        } else {
+            // SAFETY: ptr/len describe the owned buffer.
+            unsafe { std::slice::from_raw_parts(buf.ptr, buf.len) }.to_vec()
+        };
+        // SAFETY: frees the buffer returned above.
+        unsafe { sys::ct_buf_free(&mut buf) };
+        Ok(bytes)
     }
 
     /// Returns the current torrent flags (see [`TorrentFlags`](crate::TorrentFlags)).

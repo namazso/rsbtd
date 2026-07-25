@@ -10,7 +10,10 @@
 
 #include "ct_common.hpp"
 
+#include <libtorrent/bdecode.hpp>
+#include <libtorrent/bencode.hpp>
 #include <libtorrent/disabled_disk_io.hpp>
+#include <libtorrent/entry.hpp>
 #include <libtorrent/extensions/i2p_pex.hpp>
 #include <libtorrent/extensions/smart_ban.hpp>
 #include <libtorrent/extensions/ut_metadata.hpp>
@@ -30,10 +33,16 @@
 #include "handles.hpp"
 
 #include <cstring>
+#include <iterator>
 #include <new>
 #include <utility>
+#include <vector>
 
 namespace {
+
+// Top-level resume-data key for the caller's opaque byte string; unknown to
+// libtorrent (read_resume_data skips it), owned end-to-end by the bindings.
+constexpr char const* rbt_data_key = "rbt-data";
 
 // ct_session_params carries shim-side state next to the lt::session_params:
 // the default-extension toggles can only be applied when the session is
@@ -536,6 +545,82 @@ ct_add_torrent_params* ct_read_resume_data(ct_span buf,
 			return nullptr;
 		}
 		return ct::box_atp(std::move(atp));
+	});
+}
+
+ct_buf ct_write_resume_data_buf_ex(const ct_add_torrent_params* atp,
+	ct_span extra, ct_error* err)
+{
+	return ct::guard(err, [&]() -> ct_buf {
+		if (extra.len == 0) {
+			return ct::box_buffer(lt::write_resume_data_buf(ct::unwrap(atp)));
+		}
+		// The blob is spliced verbatim as the key's value (preformatted),
+		// so it must be exactly one well-formed bencode value: anything
+		// else would corrupt the whole file for every reader, old builds
+		// included. Reject rather than emit a broken file.
+		lt::error_code ec;
+		lt::bdecode_node blob = lt::bdecode(ct::span(extra), ec);
+		if (ec) {
+			ct::set_error(err, ec);
+			return ct_buf{};
+		}
+		if (blob.data_section().size()
+			!= static_cast<std::ptrdiff_t>(extra.len))
+		{
+			ct::set_error(err, lt::error_code(lt::errors::invalid_bencoding));
+			return ct_buf{};
+		}
+		// The entry form so the extra key sorts canonically with the rest;
+		// write_resume_data_buf is bencode-of-write_resume_data, so the
+		// output is byte-identical to the plain function modulo this key.
+		lt::entry e = lt::write_resume_data(ct::unwrap(atp));
+		const char* p = reinterpret_cast<const char*>(extra.ptr);
+		e[rbt_data_key] = lt::entry::preformatted_type(p, p + extra.len);
+		std::vector<char> buf;
+		lt::bencode(std::back_inserter(buf), e);
+		return ct::box_buffer(std::move(buf));
+	});
+}
+
+ct_add_torrent_params* ct_read_resume_data_ex(ct_span buf,
+	const ct_load_torrent_limits* limits, ct_buf* extra_out, ct_error* err)
+{
+	if (extra_out != nullptr) *extra_out = ct_buf{};
+	return ct::guard(err, [&]() -> ct_add_torrent_params* {
+		lt::error_code ec;
+		lt::load_torrent_limits lt_lim = ct::to_lt_load_limits(limits);
+		lt::add_torrent_params atp = lt::read_resume_data(
+			ct::span(buf), ec, lt_lim);
+		if (ec) {
+			ct::set_error(err, ec);
+			return nullptr;
+		}
+		if (extra_out != nullptr) {
+			// read_resume_data drops keys it does not know, so re-walk the
+			// top level for the bindings' own key. The buffer already
+			// bdecoded successfully above. The value was spliced verbatim
+			// (preformatted), so hand back its raw section whatever its
+			// bencode type.
+			lt::error_code ignore;
+			lt::bdecode_node root = lt::bdecode(ct::span(buf), ignore);
+			if (!ignore && root.type() == lt::bdecode_node::dict_t) {
+				lt::bdecode_node v = root.dict_find(rbt_data_key);
+				if (v) {
+					lt::span<char const> sec = v.data_section();
+					if (!sec.empty()) {
+						*extra_out = ct::box_buffer(
+							std::vector<char>(sec.begin(), sec.end()));
+					}
+				}
+			}
+		}
+		try {
+			return ct::box_atp(std::move(atp));
+		} catch (...) {
+			if (extra_out != nullptr) ct_buf_free(extra_out);
+			throw;
+		}
 	});
 }
 

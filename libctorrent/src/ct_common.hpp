@@ -90,13 +90,6 @@ inline lt::span<char const> span(ct_span s) noexcept
 		reinterpret_cast<char const*>(s.ptr), static_cast<std::ptrdiff_t>(s.len)};
 }
 
-// User data attached to torrents by the bindings: a unique correlation
-// token. client_data_t is type-tagged, so every store and load must use
-// exactly this type.
-struct token_box {
-	std::uint64_t token;
-};
-
 // -- POD conversions (lt -> ct) ---------------------------------------------
 
 inline ct_endpoint to_ct(lt::address const& addr, std::uint16_t port) noexcept

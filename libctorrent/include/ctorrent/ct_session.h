@@ -181,6 +181,29 @@ ct_add_torrent_params* ct_read_resume_data(
   ct_error* err
 );
 
+/* As ct_write_resume_data_buf, additionally splicing *extra* verbatim as
+ * the value of the top-level "rbt-data" key. *extra* must be exactly one
+ * well-formed bencode value (validated; a malformed blob is an error, not
+ * a corrupt file). extra.len == 0 writes no key (identical output to
+ * ct_write_resume_data_buf). libtorrent ignores the key when the buffer
+ * is read back. */
+ct_buf ct_write_resume_data_buf_ex(
+  const ct_add_torrent_params* atp,
+  ct_span extra,
+  ct_error* err
+);
+
+/* As ct_read_resume_data, additionally copying the raw bytes of the
+ * top-level "rbt-data" value into *extra_out (free with ct_buf_free).
+ * *extra_out is zeroed on error and when the key is absent. extra_out may
+ * be NULL to skip extraction. */
+ct_add_torrent_params* ct_read_resume_data_ex(
+  ct_span buf,
+  const ct_load_torrent_limits* limits,
+  ct_buf* extra_out,
+  ct_error* err
+);
+
 /* ---- session queries ------------------------------------------------------ */
 
 uint16_t ct_session_listen_port(const ct_session* session, ct_error* err);

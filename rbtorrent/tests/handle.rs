@@ -30,7 +30,7 @@ async fn torrent_handle_accessors() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -153,7 +153,7 @@ async fn torrent_handle_torrent_file() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -182,7 +182,7 @@ async fn torrent_handle_torrent_file() {
     .unwrap();
     magnet.set_save_path(&save_path_str);
     let magnet_handle = {
-        let add_future = session.add_torrent(&magnet);
+        let add_future = session.add_torrent(&magnet, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -220,7 +220,7 @@ async fn torrent_handle_trackers_and_seeds() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -279,7 +279,7 @@ async fn prioritize_rejects_overlong_lists() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -321,7 +321,7 @@ async fn prioritize_rejects_overlong_lists() {
     .unwrap();
     magnet.set_save_path(&save_path_str);
     let magnet_handle = {
-        let add_future = session.add_torrent(&magnet);
+        let add_future = session.add_torrent(&magnet, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -369,7 +369,7 @@ async fn file_paths_reflect_renames_and_url_seeds_are_queryable() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {

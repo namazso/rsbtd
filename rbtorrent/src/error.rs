@@ -37,6 +37,9 @@ pub enum Category {
     I2p,
     /// An error produced by the bindings themselves (not libtorrent).
     Bindings,
+    /// An error produced by client code layered on the bindings (see
+    /// [`Error::client`]).
+    Client,
     /// A category (or exception) the bindings don't recognize.
     Unknown,
 }
@@ -95,6 +98,17 @@ impl Error {
             value: 0,
             category: Category::Bindings,
             message: message.to_owned(),
+        }
+    }
+
+    /// An error originating in client code, for implementations of traits
+    /// this crate calls back into (e.g.
+    /// [`ClientData::from_bencode`](crate::ClientData::from_bencode)).
+    pub fn client(message: impl Into<String>) -> Error {
+        Error {
+            value: 0,
+            category: Category::Client,
+            message: message.into(),
         }
     }
 

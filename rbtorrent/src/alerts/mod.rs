@@ -736,12 +736,27 @@ alert_view!(
 
 impl SaveResumeDataAlert<'_> {
     /// The resume data (an owned copy). Serialize it with
-    /// [`Session::write_resume_data`](crate::Session::write_resume_data), or add it back as-is.
+    /// [`write_resume_data`](SaveResumeDataAlert::write_resume_data) (which
+    /// embeds the torrent's client data) or
+    /// [`Session::write_resume_data`](crate::Session::write_resume_data)
+    /// (which does not), or add it back as-is.
     pub fn params(&self) -> crate::params::AddTorrentParams {
         // SAFETY: view.params is valid for 'a; the clone is an owned copy.
         unsafe {
             let ptr = sys::ct_atp_clone(self.view.params);
             crate::params::AddTorrentParams::from_owned_ptr(ptr)
+        }
+    }
+
+    /// Serializes the resume data, embedding the torrent's
+    /// [`ClientData`](crate::ClientData) under the `"rbt-data"` key (see
+    /// [`TorrentHandle::write_resume_data`](crate::TorrentHandle::write_resume_data)).
+    /// When the torrent no longer exists — this alert may trail its
+    /// removal — the plain data is written without the key.
+    pub fn write_resume_data(&self) -> Result<Vec<u8>> {
+        match self.raw.torrent_handle() {
+            Some(handle) => handle.write_resume_data(&self.params()),
+            None => crate::Session::write_resume_data(&self.params()),
         }
     }
 }

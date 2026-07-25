@@ -115,6 +115,10 @@ async fn wait_until(mut pred: impl FnMut() -> bool) {
     .expect("timed out waiting for condition");
 }
 
+fn contains(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.windows(needle.len()).any(|w| w == needle)
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn transfer_persist_restore() {
     let seed_state = tempfile::tempdir().unwrap();
@@ -160,6 +164,10 @@ async fn transfer_persist_restore() {
         .join("torrents")
         .join(format!("{}.resume", leech_entry.resume_key));
     assert!(resume_file.exists(), "initial resume snapshot missing");
+    assert!(
+        contains(&std::fs::read(&resume_file).unwrap(), b"8:rbt-data"),
+        "initial resume snapshot lacks the client-data key"
+    );
 
     // --- transfer ----------------------------------------------------------
     let seed_port = seed.listen_port().unwrap();
@@ -196,6 +204,11 @@ async fn transfer_persist_restore() {
         leech2.settings().unwrap().get_upload_rate_limit(),
         Some(123_456),
         "settings did not survive the restart"
+    );
+    // The save-alert writer preserved the client-data key.
+    assert!(
+        contains(&std::fs::read(&resume_file).unwrap(), b"8:rbt-data"),
+        "saved resume data lacks the client-data key"
     );
 
     // The restored torrent has its data and reaches seeding state.
@@ -504,7 +517,7 @@ async fn metadata_less_move_is_persisted() {
         .path()
         .join("torrents")
         .join(format!("{}.resume", entry.resume_key));
-    let restored =
+    let (restored, _) =
         rbtorrent::Session::read_resume_data(&std::fs::read(&resume).unwrap(), None).unwrap();
     assert_eq!(
         restored.save_path(),

@@ -198,7 +198,7 @@ impl BatchState<'_> {
                     self.inflight.dec();
                     return;
                 };
-                match rbtorrent::Session::write_resume_data(&a.params()) {
+                match a.write_resume_data() {
                     Ok(bytes) => self.ops.push(PersistOp::WriteResume {
                         resume_key: entry.resume_key.clone(),
                         torrent,

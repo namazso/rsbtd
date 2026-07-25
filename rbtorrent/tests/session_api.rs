@@ -34,7 +34,7 @@ async fn add_remove_torrent() {
     // polled, so poll both concurrently. The pinned future borrows the
     // session; the block scopes that borrow to end with the loop.
     let handle = {
-        let add = session.add_torrent(&atp);
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         loop {
             tokio::select! {
@@ -87,7 +87,7 @@ async fn resume_data_roundtrip() {
     let resume = Session::write_resume_data(&atp).unwrap();
     assert!(!resume.is_empty());
 
-    let restored = Session::read_resume_data(&resume, None).unwrap();
+    let (restored, _) = Session::read_resume_data(&resume, None).unwrap();
     assert_eq!(restored.name(), atp.name());
     assert_eq!(restored.save_path(), atp.save_path());
     assert_eq!(restored.info_hashes(), atp.info_hashes());
@@ -113,7 +113,7 @@ async fn torrent_handle_operations() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add = session.add_torrent(&atp);
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         loop {
             tokio::select! {
@@ -170,7 +170,7 @@ async fn find_torrent_and_status_identity() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add = session.add_torrent(&atp);
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         loop {
             tokio::select! {
@@ -208,7 +208,7 @@ async fn find_torrent_and_status_identity() {
     let mut hybrid_atp = AddTorrentParams::from_torrent_file(&hybrid_path).unwrap();
     hybrid_atp.set_save_path(save_dir.path().to_str().unwrap());
     let hybrid = {
-        let add = session.add_torrent(&hybrid_atp);
+        let add = session.add_torrent(&hybrid_atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         loop {
             tokio::select! {

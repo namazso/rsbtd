@@ -164,6 +164,15 @@ ct_info_hash ct_torrent_handle_info_hashes(const ct_torrent_handle* handle) {
 	});
 }
 
+uint64_t ct_torrent_handle_userdata(const ct_torrent_handle* handle) {
+	return ct::query(handle, uint64_t{0}, [](auto const& th) {
+		// Type-tagged as void (see ct_session_async_add_torrent):
+		// get<void*>() would compare against type<void*> and always miss.
+		lt::client_data_t const ud = th.userdata();
+		return reinterpret_cast<uint64_t>(ud.get<void>());
+	});
+}
+
 bool ct_torrent_handle_in_session(const ct_torrent_handle* handle) {
 	return ct::query(handle, false,
 		[](auto const& th) { return th.in_session(); });

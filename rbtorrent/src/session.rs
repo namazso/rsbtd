@@ -471,14 +471,25 @@ impl Session {
     /// Dropping the future does **not** undo the addition (it is posted
     /// before this function returns): the torrent still joins the session.
     /// The future (and the handle it resolves to) borrows the session.
+    ///
+    /// `data` is the torrent's [`ClientData`](crate::ClientData), kept for
+    /// the torrent's lifetime: retrieve it via
+    /// [`TorrentHandle::client_data`](crate::TorrentHandle::client_data),
+    /// persist it through the handle-aware resume-data writers. Pass
+    /// `Arc::new(())` to attach nothing. When the add resolves to an
+    /// already-present torrent (duplicate hash without
+    /// [`TorrentFlags::DUPLICATE_IS_ERROR`](crate::TorrentFlags::DUPLICATE_IS_ERROR)),
+    /// `data` is discarded — the existing torrent keeps the data it was
+    /// added with.
     pub fn add_torrent<'s>(
         &'s self,
         params: &crate::params::AddTorrentParams,
+        data: Arc<dyn crate::ClientData>,
     ) -> impl Future<Output = Result<crate::handle::TorrentHandle<'s>>> + Send + use<'s> {
         let queued = self
             .inner
             .registry
-            .enqueue_add_torrent()
+            .enqueue_add_torrent(data)
             .and_then(|(token, rx)| {
                 // SAFETY: session and params valid; params are copied.
                 match with_error(|err| unsafe {
@@ -489,7 +500,7 @@ impl Session {
                         AddTorrentToken::new(Arc::clone(&self.inner.registry), token),
                     )),
                     Err(e) => {
-                        self.inner.registry.cancel_add_torrent(token);
+                        self.inner.registry.abort_add_torrent(token);
                         Err(e)
                     }
                 }
@@ -541,28 +552,61 @@ impl Session {
         Ok(bytes)
     }
 
-    /// Reads an [`AddTorrentParams`](crate::params::AddTorrentParams) from bencoded resume data.
+    /// Reads an [`AddTorrentParams`](crate::params::AddTorrentParams) from
+    /// bencoded resume data, together with the raw
+    /// [`ClientData`](crate::ClientData) bytes stored under the resume
+    /// data's `"rbt-data"` key (`None` when absent, e.g. for resume data
+    /// written without client data). See
+    /// [`read_resume_data_with`](Session::read_resume_data_with) for the
+    /// typed form.
     pub fn read_resume_data(
         bencoded: &[u8],
         limits: Option<crate::params::LoadTorrentLimits>,
-    ) -> Result<crate::params::AddTorrentParams> {
+    ) -> Result<(crate::params::AddTorrentParams, Option<Vec<u8>>)> {
         let limits_ct = limits.map(|l| l.to_ct());
         let limits_ptr = limits_ct
             .as_ref()
             .map(|l| l as *const _)
             .unwrap_or(std::ptr::null());
-        // SAFETY: span borrows `bencoded`; on success we own the returned params.
+        let mut extra = sys::ct_buf::default();
+        // SAFETY: span borrows `bencoded`; on success we own the returned
+        // params and the extra buffer.
         let ptr = with_error(|err| unsafe {
-            sys::ct_read_resume_data(
+            sys::ct_read_resume_data_ex(
                 sys::ct_span {
                     ptr: bencoded.as_ptr(),
                     len: bencoded.len(),
                 },
                 limits_ptr,
+                &mut extra,
                 err,
             )
         })?;
-        Ok(unsafe { crate::params::AddTorrentParams::from_owned_ptr(ptr) })
+        let bytes = if extra.ptr.is_null() || extra.len == 0 {
+            None
+        } else {
+            // SAFETY: ptr/len describe the owned buffer.
+            Some(unsafe { std::slice::from_raw_parts(extra.ptr, extra.len) }.to_vec())
+        };
+        // SAFETY: frees the buffer filled above (no-op when zeroed).
+        unsafe { sys::ct_buf_free(&mut extra) };
+        Ok((
+            // SAFETY: on success we own the returned params.
+            unsafe { crate::params::AddTorrentParams::from_owned_ptr(ptr) },
+            bytes,
+        ))
+    }
+
+    /// Reads resume data and decodes its client-data blob into a concrete
+    /// [`ClientData`](crate::ClientData) type; an absent `"rbt-data"` key
+    /// decodes as `T::from_bencode(None)` (the type's defaults), which is
+    /// what makes resume data written before `T` existed load cleanly.
+    pub fn read_resume_data_with<T: crate::ClientData>(
+        bencoded: &[u8],
+        limits: Option<crate::params::LoadTorrentLimits>,
+    ) -> Result<(crate::params::AddTorrentParams, T)> {
+        let (params, extra) = Self::read_resume_data(bencoded, limits)?;
+        Ok((params, T::from_bencode(extra.as_deref())?))
     }
 
     #[inline]

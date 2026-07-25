@@ -31,7 +31,7 @@ async fn torrent_status_accessors() {
     let mut alerts = session.alerts();
 
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {
@@ -155,7 +155,7 @@ async fn torrent_status_during_transfer() {
     let mut seed_alerts = seed_session.alerts();
 
     let seed_handle = {
-        let add_seed = seed_session.add_torrent(&seed_atp);
+        let add_seed = seed_session.add_torrent(&seed_atp, std::sync::Arc::new(()));
         tokio::pin!(add_seed);
         loop {
             tokio::select! {
@@ -206,7 +206,7 @@ async fn torrent_status_during_transfer() {
     let mut leech_alerts = leech_session.alerts();
 
     let leech_handle = {
-        let add_leech = leech_session.add_torrent(&leech_atp);
+        let add_leech = leech_session.add_torrent(&leech_atp, std::sync::Arc::new(()));
         tokio::pin!(add_leech);
         loop {
             tokio::select! {

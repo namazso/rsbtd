@@ -21,7 +21,7 @@ fn resume_data_roundtrip() {
     let resume = Session::write_resume_data(&atp).unwrap();
     assert!(!resume.is_empty());
 
-    let restored = Session::read_resume_data(&resume, None).unwrap();
+    let (restored, _) = Session::read_resume_data(&resume, None).unwrap();
     assert_eq!(restored.name(), atp.name());
     assert_eq!(restored.save_path(), atp.save_path());
     assert_eq!(restored.info_hashes(), atp.info_hashes());
@@ -52,7 +52,7 @@ async fn add_torrent_with_alert_polling() {
     // Add the torrent and concurrently poll for the alert. The pinned
     // future borrows the session; the block scopes that borrow.
     let handle = {
-        let add_future = session.add_torrent(&atp);
+        let add_future = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add_future);
         loop {
             tokio::select! {

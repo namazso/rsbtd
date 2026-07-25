@@ -143,7 +143,7 @@ Operations like `session.add_torrent()` return futures that only resolve while t
 
 ```rust
 let mut alerts = session.alerts();
-let add_future = session.add_torrent(&params);
+let add_future = session.add_torrent(&params, std::sync::Arc::new(()));
 
 tokio::pin!(add_future);
 let handle = loop {
