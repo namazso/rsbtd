@@ -23,7 +23,7 @@ use super::{Nullable, SettingsError, defined, invalid, missing, nullable, rb_err
 
 /// The qBittorrent version `userAgent: QBITTORRENT` impersonates.
 /// Bump deliberately: trackers whitelist specific versions.
-pub const QBITTORRENT_COMPAT_VERSION: &str = "5.0.5";
+pub const QBITTORRENT_COMPAT_VERSION: &str = "5.2.3";
 
 /// Ports where 0 (ephemeral) makes no sense, as the rbtorrent types
 /// that carry the constraint.
