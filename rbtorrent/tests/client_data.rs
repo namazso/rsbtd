@@ -114,7 +114,10 @@ async fn client_data_attach_swap_persist() {
     .await;
 
     // Retrieval, typed and untyped; a wrong downcast is an error.
-    assert_eq!(*handle.client_data_as::<TestData>().unwrap(), TestData::new("first"));
+    assert_eq!(
+        *handle.client_data_as::<TestData>().unwrap(),
+        TestData::new("first")
+    );
     assert!(handle.client_data().is_ok());
     assert!(handle.client_data_as::<()>().is_err());
 

@@ -243,8 +243,7 @@ impl Registry {
             // token: a failed add never attached, and a duplicate add
             // resolves to the pre-existing torrent, which kept its original
             // userdata (the new attempt's data can never be reached again).
-            let surviving = result.is_ok()
-                && sys::ct_torrent_handle_userdata(view.handle) == token;
+            let surviving = result.is_ok() && sys::ct_torrent_handle_userdata(view.handle) == token;
             (token, surviving, result)
         };
         // Regardless of sender presence: the future may be long cancelled
