@@ -122,7 +122,7 @@ impl<'s> TorrentHandle<'s> {
         }
     }
 
-    /// Wraps already-owned handle bytes (the `find_torrent` path); the
+    /// Wraps already-owned handle bytes (the `find_torrent_v*` path); the
     /// torrent must belong to `session`.
     pub(crate) fn from_owned(
         inner: sys::ct_torrent_handle,
@@ -185,9 +185,12 @@ impl TorrentHandle<'_> {
         unsafe { sys::ct_torrent_handle_in_session(self.as_ptr()) }
     }
 
-    /// The userdata token the bindings attached at add time, or an error
-    /// for expired handles (whose torrent no longer exists).
-    fn client_data_token(&self) -> Result<u64, crate::Error> {
+    /// The userdata token the bindings attached at add time — the
+    /// torrent's key for
+    /// [`Session::find_torrent_by_token`](crate::Session::find_torrent_by_token)
+    /// and its client data — or an error for expired handles (whose
+    /// torrent no longer exists).
+    pub fn client_data_token(&self) -> Result<u64, crate::Error> {
         // SAFETY: handle valid; expired handles return 0.
         let token = unsafe { sys::ct_torrent_handle_userdata(self.as_ptr()) };
         if token == 0 {
@@ -921,6 +924,13 @@ impl RawHandle {
             sys::ct_torrent_handle_clone(ptr, &mut inner);
             RawHandle(inner)
         }
+    }
+
+    /// Clones the raw handle (runs the C++ copy constructor, bumping the
+    /// underlying control-block count).
+    pub(crate) fn clone_raw(&self) -> RawHandle {
+        // SAFETY: `&self.0` is a valid ct_torrent_handle for the call.
+        unsafe { RawHandle::from_ptr(&self.0) }
     }
 
     /// Takes the handle bytes out without running `Drop`.

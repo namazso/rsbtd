@@ -150,7 +150,7 @@ async fn torrent_handle_operations() {
 }
 
 #[tokio::test]
-async fn find_torrent_and_status_identity() {
+async fn token_lookup_and_status_identity() {
     let fixture_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/transfer.torrent");
     let save_dir = tempfile::tempdir().unwrap();
@@ -180,10 +180,11 @@ async fn find_torrent_and_status_identity() {
         }
     };
 
-    // find_torrent: a hit yields the same torrent.
+    // find_torrent_by_token: a hit yields the same torrent.
+    let token = handle.client_data_token().unwrap();
     let found = session
-        .find_torrent(atp.info_hashes())
-        .expect("added torrent is findable");
+        .find_torrent_by_token(token)
+        .expect("added torrent is findable by its token");
     assert_eq!(found.id(), handle.id());
     assert_eq!(found.info_hashes(), handle.info_hashes());
 
@@ -192,23 +193,40 @@ async fn find_torrent_and_status_identity() {
     assert_eq!(status.id(), handle.id());
     assert_eq!(status.info_hashes(), handle.info_hashes());
 
-    // Misses: empty and unknown hashes.
-    assert!(
-        session
-            .find_torrent(rbtorrent::InfoHash::new(None, None))
-            .is_none()
-    );
-    let unknown = rbtorrent::InfoHash::from_v1(rbtorrent::Sha1Hash([0xab; 20]));
-    assert!(session.find_torrent(unknown).is_none());
+    // Misses: the null token and a token never minted.
+    assert!(session.find_torrent_by_token(0).is_none());
+    assert!(session.find_torrent_by_token(u64::MAX).is_none());
 
-    // A hybrid torrent stays findable when the v1 lookup misses: the v2
-    // hash is tried next.
-    let hybrid_path =
+    drop(found);
+    drop(handle);
+    drop(alerts);
+    session.close().await;
+}
+
+#[tokio::test]
+async fn info_hash_lookup() {
+    // A hybrid torrent has both hash forms, so one torrent exercises both
+    // lookups.
+    let fixture_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hybrid.torrent");
-    let mut hybrid_atp = AddTorrentParams::from_torrent_file(&hybrid_path).unwrap();
-    hybrid_atp.set_save_path(save_dir.path().to_str().unwrap());
-    let hybrid = {
-        let add = session.add_torrent(&hybrid_atp, std::sync::Arc::new(()));
+    let save_dir = tempfile::tempdir().unwrap();
+    let mut atp = AddTorrentParams::from_torrent_file(&fixture_path).unwrap();
+    atp.set_save_path(save_dir.path().to_str().unwrap());
+
+    let mut settings = SettingsPack::new();
+    settings
+        .enable_dht(false)
+        .enable_lsd(false)
+        .enable_upnp(false)
+        .enable_natpmp(false)
+        .listen_interfaces(&[rbtorrent::ListenEndpoint::new("127.0.0.1", 0)])
+        .unwrap();
+
+    let session = Session::new(SessionParams::new().settings(&settings)).unwrap();
+    let mut alerts = session.alerts();
+
+    let handle = {
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
         tokio::pin!(add);
         loop {
             tokio::select! {
@@ -217,14 +235,42 @@ async fn find_torrent_and_status_identity() {
             }
         }
     };
-    let v2 = hybrid.info_hashes().v2().expect("hybrid has a v2 hash");
-    let mixed = rbtorrent::InfoHash::new(Some(rbtorrent::Sha1Hash([0xab; 20])), Some(v2));
-    let via_fallback = session.find_torrent(mixed).expect("v2 fallback finds it");
-    assert_eq!(via_fallback.id(), hybrid.id());
 
-    drop(via_fallback);
-    drop(hybrid);
-    drop(found);
+    let hashes = handle.info_hashes();
+    let v1 = hashes.v1().expect("hybrid has a v1 hash");
+    let v2 = hashes.v2().expect("hybrid has a v2 hash");
+
+    // Either hash form finds the same torrent.
+    let by_v1 = session
+        .find_torrent_v1(v1)
+        .expect("findable by its v1 hash");
+    assert_eq!(by_v1.id(), handle.id());
+    let by_v2 = session
+        .find_torrent_v2(v2)
+        .expect("findable by its v2 hash");
+    assert_eq!(by_v2.id(), handle.id());
+    assert_eq!(by_v2.info_hashes(), hashes);
+
+    // Misses: the zero hash and a hash no torrent has. Each lookup only
+    // probes its own hash form, so a v1 hash never matches via v2.
+    assert!(
+        session
+            .find_torrent_v1(rbtorrent::Sha1Hash([0; 20]))
+            .is_none()
+    );
+    assert!(
+        session
+            .find_torrent_v1(rbtorrent::Sha1Hash([0xab; 20]))
+            .is_none()
+    );
+    assert!(
+        session
+            .find_torrent_v2(rbtorrent::Sha256Hash([0xab; 32]))
+            .is_none()
+    );
+
+    drop(by_v1);
+    drop(by_v2);
     drop(handle);
     drop(alerts);
     session.close().await;

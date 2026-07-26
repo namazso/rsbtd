@@ -37,15 +37,15 @@ const TOGGLE_FLAGS: TorrentFlag[] = [
 
 export function OptionsTab({ row }: { row: TorrentRow }) {
   const { t } = useTranslation(['details', 'torrents', 'common']);
-  const hash = row.infoHash;
+  const uuid = row.uuid;
   const openMoveDialog = useUi((s) => s.openMoveDialog);
   const openLimitsDialog = useUi((s) => s.openLimitsDialog);
   const [queuePos, setQueuePos] = useState('');
 
   const toggleFlag = (flag: TorrentFlag, on: boolean) => {
     void mutations
-      .setFlags(hash, on ? [flag] : [], on ? [] : [flag])
-      .then(() => refreshTorrent(hash))
+      .setFlags(uuid, on ? [flag] : [], on ? [] : [flag])
+      .then(() => refreshTorrent(uuid))
       .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)));
   };
 
@@ -84,7 +84,7 @@ export function OptionsTab({ row }: { row: TorrentRow }) {
           <h3 className="mb-2 text-xs font-semibold text-muted-foreground uppercase">
             {t('options.limits')}
           </h3>
-          <Button size="sm" variant="outline" onClick={() => openLimitsDialog([hash])}>
+          <Button size="sm" variant="outline" onClick={() => openLimitsDialog([uuid])}>
             {t('torrents:actions.limits')}
           </Button>
         </section>
@@ -108,7 +108,7 @@ export function OptionsTab({ row }: { row: TorrentRow }) {
               onClick={() => {
                 const pos = Number(queuePos) - 1;
                 if (Number.isFinite(pos) && pos >= 0) {
-                  run(() => mutations.setQueuePosition(hash, pos).then(() => refreshTorrent(hash)));
+                  run(() => mutations.setQueuePosition(uuid, pos).then(() => refreshTorrent(uuid)));
                   setQueuePos('');
                 }
               }}
@@ -123,37 +123,37 @@ export function OptionsTab({ row }: { row: TorrentRow }) {
             {t('options.maintenance')}
           </h3>
           <div className="flex flex-wrap gap-1.5">
-            <Button size="sm" variant="outline" onClick={() => run(() => mutations.recheck(hash))}>
+            <Button size="sm" variant="outline" onClick={() => run(() => mutations.recheck(uuid))}>
               {t('options.recheck')}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => run(() => mutations.saveResumeData(hash))}
+              onClick={() => run(() => mutations.saveResumeData(uuid))}
             >
               {t('options.saveResume')}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => run(() => mutations.flushCache(hash))}
+              onClick={() => run(() => mutations.flushCache(uuid))}
             >
               {t('options.flushCache')}
             </Button>
-            <Button size="sm" variant="outline" onClick={() => openMoveDialog([hash])}>
+            <Button size="sm" variant="outline" onClick={() => openMoveDialog([uuid])}>
               {t('options.setLocation')}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => run(() => mutations.reannounce(hash))}
+              onClick={() => run(() => mutations.reannounce(uuid))}
             >
               {t('options.reannounce')}
             </Button>
             <Button
               size="sm"
               variant="outline"
-              onClick={() => run(() => mutations.dhtAnnounce(hash))}
+              onClick={() => run(() => mutations.dhtAnnounce(uuid))}
             >
               {t('options.dhtAnnounce')}
             </Button>

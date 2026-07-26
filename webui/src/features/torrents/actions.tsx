@@ -38,8 +38,8 @@ import { useUi } from '@/store/ui';
  * the torrent stays paused; plain Resume re-attaches (`AUTO_MANAGED`) so
  * queue logic takes over; Force resume resumes *without* re-attaching.
  */
-async function bulkToast(hashes: readonly string[], fn: (hash: string) => Promise<unknown>) {
-  const { errors } = await bulk(hashes, fn);
+async function bulkToast(uuids: readonly string[], fn: (uuid: string) => Promise<unknown>) {
+  const { errors } = await bulk(uuids, fn);
   if (errors.length > 0) {
     toast.error(
       tDynamic('torrents:bulk.failed', { count: errors.length }) + `: ${errors[0]?.message ?? ''}`,
@@ -48,26 +48,26 @@ async function bulkToast(hashes: readonly string[], fn: (hash: string) => Promis
 }
 
 export const torrentCommands = {
-  resume: (hashes: readonly string[]) =>
-    bulkToast(hashes, async (h) => {
+  resume: (uuids: readonly string[]) =>
+    bulkToast(uuids, async (h) => {
       await mutations.setFlags(h, ['AUTO_MANAGED'], []);
       await mutations.resume(h);
     }),
-  forceResume: (hashes: readonly string[]) =>
-    bulkToast(hashes, async (h) => {
+  forceResume: (uuids: readonly string[]) =>
+    bulkToast(uuids, async (h) => {
       await mutations.setFlags(h, [], ['AUTO_MANAGED']);
       await mutations.resume(h);
     }),
-  pause: (hashes: readonly string[], graceful = false) =>
-    bulkToast(hashes, (h) => mutations.pause(h, graceful)),
-  recheck: (hashes: readonly string[]) => bulkToast(hashes, (h) => mutations.recheck(h)),
-  reannounce: (hashes: readonly string[]) => bulkToast(hashes, (h) => mutations.reannounce(h)),
-  dhtAnnounce: (hashes: readonly string[]) => bulkToast(hashes, (h) => mutations.dhtAnnounce(h)),
-  clearError: (hashes: readonly string[]) => bulkToast(hashes, (h) => mutations.clearError(h)),
-  flushCache: (hashes: readonly string[]) => bulkToast(hashes, (h) => mutations.flushCache(h)),
-  saveResumeData: (hashes: readonly string[]) =>
-    bulkToast(hashes, (h) => mutations.saveResumeData(h)),
-  queue: (hashes: readonly string[], op: 'top' | 'up' | 'down' | 'bottom') => {
+  pause: (uuids: readonly string[], graceful = false) =>
+    bulkToast(uuids, (h) => mutations.pause(h, graceful)),
+  recheck: (uuids: readonly string[]) => bulkToast(uuids, (h) => mutations.recheck(h)),
+  reannounce: (uuids: readonly string[]) => bulkToast(uuids, (h) => mutations.reannounce(h)),
+  dhtAnnounce: (uuids: readonly string[]) => bulkToast(uuids, (h) => mutations.dhtAnnounce(h)),
+  clearError: (uuids: readonly string[]) => bulkToast(uuids, (h) => mutations.clearError(h)),
+  flushCache: (uuids: readonly string[]) => bulkToast(uuids, (h) => mutations.flushCache(h)),
+  saveResumeData: (uuids: readonly string[]) =>
+    bulkToast(uuids, (h) => mutations.saveResumeData(h)),
+  queue: (uuids: readonly string[], op: 'top' | 'up' | 'down' | 'bottom') => {
     // The moves are applied one at a time, so order decides the result:
     // an adjacent multi-selection moved "up" in arbitrary order leapfrogs
     // itself, and "top" applied first-to-last reverses the selection.
@@ -76,9 +76,9 @@ export const torrentCommands = {
     // down and top (top pushes later rows above earlier ones), ascending
     // for bottom.
     const store = useTorrents.getState();
-    const position = (hash: string) =>
-      store.byHash.get(store.resolve(hash) ?? hash)?.queuePosition ?? Number.MAX_SAFE_INTEGER;
-    const ordered = [...hashes].sort((a, b) =>
+    const position = (uuid: string) =>
+      store.byUuid.get(uuid)?.queuePosition ?? Number.MAX_SAFE_INTEGER;
+    const ordered = [...uuids].sort((a, b) =>
       op === 'up' || op === 'bottom' ? position(a) - position(b) : position(b) - position(a),
     );
     return bulkToast(ordered, (h) =>
@@ -97,7 +97,7 @@ export const torrentCommands = {
     target: boolean,
   ) =>
     bulkToast(
-      rows.filter((r) => r.flags.includes(flag) !== target).map((r) => r.infoHash),
+      rows.filter((r) => r.flags.includes(flag) !== target).map((r) => r.uuid),
       (h) => mutations.setFlags(h, target ? [flag] : [], target ? [] : [flag]),
     ),
 };
@@ -106,7 +106,7 @@ function copyMagnets(rows: readonly TorrentRow[]): Promise<void> {
   return copyTextFrom(async () => {
     const uris: string[] = [];
     for (const row of rows) {
-      const uri = await mutations.magnetUri(row.infoHash);
+      const uri = await mutations.magnetUri(row.uuid);
       if (uri !== null) uris.push(uri);
     }
     return uris.join('\n');
@@ -122,7 +122,7 @@ export interface TorrentActionItemsProps {
 export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
   const { t } = useTranslation(['torrents', 'common']);
   const K = kit;
-  const hashes = rows.map((r) => r.infoHash);
+  const uuids = rows.map((r) => r.uuid);
   const none = rows.length === 0;
   const anyError = rows.some((r) => r.error != null);
   const allSequential =
@@ -133,11 +133,11 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
 
   return (
     <>
-      <K.Item disabled={none} onSelect={() => void torrentCommands.resume(hashes)}>
+      <K.Item disabled={none} onSelect={() => void torrentCommands.resume(uuids)}>
         <Play />
         {t('actions.resume')}
       </K.Item>
-      <K.Item disabled={none} onSelect={() => void torrentCommands.pause(hashes)}>
+      <K.Item disabled={none} onSelect={() => void torrentCommands.pause(uuids)}>
         <Pause />
         {t('actions.pause')}
       </K.Item>
@@ -147,11 +147,11 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
           {t('actions.more')}
         </K.SubTrigger>
         <K.SubContent>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.forceResume(hashes)}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.forceResume(uuids)}>
             <Zap />
             {t('actions.forceResume')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.pause(hashes, true)}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.pause(uuids, true)}>
             <Pause />
             {t('actions.pauseGraceful')}
           </K.Item>
@@ -160,30 +160,30 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
             disabled={!anyError}
             onSelect={() =>
               void torrentCommands.clearError(
-                rows.filter((r) => r.error != null).map((r) => r.infoHash),
+                rows.filter((r) => r.error != null).map((r) => r.uuid),
               )
             }
           >
             {t('actions.clearError')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.flushCache(hashes)}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.flushCache(uuids)}>
             {t('actions.flushCache')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.saveResumeData(hashes)}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.saveResumeData(uuids)}>
             {t('actions.saveResumeData')}
           </K.Item>
         </K.SubContent>
       </K.Sub>
       <K.Separator />
-      <K.Item disabled={none} onSelect={() => void torrentCommands.recheck(hashes)}>
+      <K.Item disabled={none} onSelect={() => void torrentCommands.recheck(uuids)}>
         <RefreshCw />
         {t('actions.recheck')}
       </K.Item>
-      <K.Item disabled={none} onSelect={() => void torrentCommands.reannounce(hashes)}>
+      <K.Item disabled={none} onSelect={() => void torrentCommands.reannounce(uuids)}>
         <Megaphone />
         {t('actions.reannounce')}
       </K.Item>
-      <K.Item disabled={none} onSelect={() => void torrentCommands.dhtAnnounce(hashes)}>
+      <K.Item disabled={none} onSelect={() => void torrentCommands.dhtAnnounce(uuids)}>
         <Megaphone />
         {t('actions.dhtAnnounce')}
       </K.Item>
@@ -194,19 +194,19 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
           {t('actions.queue')}
         </K.SubTrigger>
         <K.SubContent>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(hashes, 'top')}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(uuids, 'top')}>
             <ArrowUpToLine />
             {t('actions.queueTop')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(hashes, 'up')}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(uuids, 'up')}>
             <ArrowUp />
             {t('actions.queueUp')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(hashes, 'down')}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(uuids, 'down')}>
             <ArrowDown />
             {t('actions.queueDown')}
           </K.Item>
-          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(hashes, 'bottom')}>
+          <K.Item disabled={none} onSelect={() => void torrentCommands.queue(uuids, 'bottom')}>
             <ArrowDownToLine />
             {t('actions.queueBottom')}
           </K.Item>
@@ -234,11 +234,11 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
         {t('actions.autoManaged')}
       </K.CheckboxItem>
       <K.Separator />
-      <K.Item disabled={none} onSelect={() => ui.openMoveDialog(hashes)}>
+      <K.Item disabled={none} onSelect={() => ui.openMoveDialog(uuids)}>
         <FolderInput />
         {t('actions.setLocation')}
       </K.Item>
-      <K.Item disabled={none} onSelect={() => ui.openLimitsDialog(hashes)}>
+      <K.Item disabled={none} onSelect={() => ui.openLimitsDialog(uuids)}>
         <Gauge />
         {t('actions.limits')}
       </K.Item>
@@ -284,7 +284,7 @@ export function TorrentActionItems({ kit, rows }: TorrentActionItemsProps) {
       <K.Item
         disabled={none}
         className="text-destructive data-[highlighted]:bg-destructive/10"
-        onSelect={() => ui.openRemoveDialog(hashes)}
+        onSelect={() => ui.openRemoveDialog(uuids)}
       >
         <Trash2 className="!text-destructive" />
         {t('actions.remove')}

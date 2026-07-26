@@ -33,16 +33,14 @@ const MOBILE_TABS: MobileTab[] = ['actions', 'general', 'files', 'trackers', 'pe
  * action set (parity with the desktop context menu), plus the detail
  * tabs (files/trackers/peers/options) shared with the desktop panel.
  */
-export function MobileTorrentPage({ hash }: { hash: string }) {
+export function MobileTorrentPage({ uuid }: { uuid: string }) {
   const { t } = useTranslation(['torrents', 'common', 'details']);
   const navigate = useNavigate();
   const [tab, setTab] = useState<MobileTab>('actions');
   const listVersion = useTorrents((s) => s.listVersion);
   void listVersion; // re-render on ticks
   const synced = useSynced((s) => s.synced);
-  const store = useTorrents.getState();
-  const canonical = store.resolve(hash) ?? hash;
-  const row = store.byHash.get(canonical);
+  const row = useTorrents.getState().byUuid.get(uuid);
 
   if (row === undefined) {
     // Before the first full snapshot the store is empty and a deep link
@@ -59,7 +57,7 @@ export function MobileTorrentPage({ hash }: { hash: string }) {
       <div className="flex h-dvh flex-col">
         <PageHeader title={t('common:notFound.title')} onBack={() => void navigate('/')} />
         <p className="p-4 text-sm text-muted-foreground">
-          {t('common:notFound.torrent', { hash: hash.slice(0, 12) })}
+          {t('common:notFound.torrent', { uuid: uuid.slice(0, 8) })}
         </p>
       </div>
     );
@@ -151,16 +149,16 @@ export function MobileTorrentPage({ hash }: { hash: string }) {
             </SheetActionScope>
           </TabsContent>
           <TabsContent value="general">
-            <GeneralTab row={row} hash={row.infoHash} visible={tab === 'general'} />
+            <GeneralTab row={row} uuid={row.uuid} visible={tab === 'general'} />
           </TabsContent>
           <TabsContent value="files">
-            <FilesTab hash={row.infoHash} visible={tab === 'files'} />
+            <FilesTab uuid={row.uuid} visible={tab === 'files'} />
           </TabsContent>
           <TabsContent value="trackers">
-            <TrackersTab hash={row.infoHash} visible={tab === 'trackers'} />
+            <TrackersTab uuid={row.uuid} visible={tab === 'trackers'} />
           </TabsContent>
           <TabsContent value="peers">
-            <PeersTab hash={row.infoHash} visible={tab === 'peers'} />
+            <PeersTab uuid={row.uuid} visible={tab === 'peers'} />
           </TabsContent>
           <TabsContent value="options">
             <OptionsTab row={row} />

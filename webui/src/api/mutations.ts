@@ -12,108 +12,108 @@ import { request } from './client';
  * "accepted", not "already applied" — the 1/s stream shows the effect). */
 
 const PauseTorrentMutation = graphql(`
-  mutation PauseTorrent($hash: InfoHash!, $graceful: Boolean!) {
-    pauseTorrent(infoHash: $hash, graceful: $graceful)
+  mutation PauseTorrent($uuid: UUID!, $graceful: Boolean!) {
+    pauseTorrent(uuid: $uuid, graceful: $graceful)
   }
 `);
 
 const ResumeTorrentMutation = graphql(`
-  mutation ResumeTorrent($hash: InfoHash!) {
-    resumeTorrent(infoHash: $hash)
+  mutation ResumeTorrent($uuid: UUID!) {
+    resumeTorrent(uuid: $uuid)
   }
 `);
 
 const SetTorrentFlagsMutation = graphql(`
-  mutation SetTorrentFlags($hash: InfoHash!, $set: [TorrentFlag!]!, $unset: [TorrentFlag!]!) {
-    setTorrentFlags(infoHash: $hash, set: $set, unset: $unset)
+  mutation SetTorrentFlags($uuid: UUID!, $set: [TorrentFlag!]!, $unset: [TorrentFlag!]!) {
+    setTorrentFlags(uuid: $uuid, set: $set, unset: $unset)
   }
 `);
 
 const RemoveTorrentMutation = graphql(`
-  mutation RemoveTorrent($hash: InfoHash!, $deleteFiles: Boolean!) {
-    removeTorrent(infoHash: $hash, deleteFiles: $deleteFiles)
+  mutation RemoveTorrent($uuid: UUID!, $deleteFiles: Boolean!) {
+    removeTorrent(uuid: $uuid, deleteFiles: $deleteFiles)
   }
 `);
 
 const ForceRecheckMutation = graphql(`
-  mutation ForceRecheck($hash: InfoHash!) {
-    forceRecheck(infoHash: $hash)
+  mutation ForceRecheck($uuid: UUID!) {
+    forceRecheck(uuid: $uuid)
   }
 `);
 
 const ForceReannounceMutation = graphql(`
-  mutation ForceReannounce($hash: InfoHash!, $seconds: Int!, $trackerIndex: Int!) {
-    forceReannounce(infoHash: $hash, seconds: $seconds, trackerIndex: $trackerIndex)
+  mutation ForceReannounce($uuid: UUID!, $seconds: Int!, $trackerIndex: Int!) {
+    forceReannounce(uuid: $uuid, seconds: $seconds, trackerIndex: $trackerIndex)
   }
 `);
 
 const ForceDhtAnnounceMutation = graphql(`
-  mutation ForceDhtAnnounce($hash: InfoHash!) {
-    forceDhtAnnounce(infoHash: $hash)
+  mutation ForceDhtAnnounce($uuid: UUID!) {
+    forceDhtAnnounce(uuid: $uuid)
   }
 `);
 
 const ClearErrorMutation = graphql(`
-  mutation ClearError($hash: InfoHash!) {
-    clearError(infoHash: $hash)
+  mutation ClearError($uuid: UUID!) {
+    clearError(uuid: $uuid)
   }
 `);
 
 const FlushCacheMutation = graphql(`
-  mutation FlushCache($hash: InfoHash!) {
-    flushCache(infoHash: $hash)
+  mutation FlushCache($uuid: UUID!) {
+    flushCache(uuid: $uuid)
   }
 `);
 
 const SaveResumeDataMutation = graphql(`
-  mutation SaveResumeData($hash: InfoHash!) {
-    saveResumeData(infoHash: $hash)
+  mutation SaveResumeData($uuid: UUID!) {
+    saveResumeData(uuid: $uuid)
   }
 `);
 
 const MoveStorageMutation = graphql(`
-  mutation MoveStorage($hash: InfoHash!, $path: String!, $mode: MoveMode!) {
-    moveStorage(infoHash: $hash, path: $path, mode: $mode)
+  mutation MoveStorage($uuid: UUID!, $path: String!, $mode: MoveMode!) {
+    moveStorage(uuid: $uuid, path: $path, mode: $mode)
   }
 `);
 
 const QueueTopMutation = graphql(`
-  mutation QueueTop($hash: InfoHash!) {
-    queueTop(infoHash: $hash)
+  mutation QueueTop($uuid: UUID!) {
+    queueTop(uuid: $uuid)
   }
 `);
 const QueueUpMutation = graphql(`
-  mutation QueueUp($hash: InfoHash!) {
-    queueUp(infoHash: $hash)
+  mutation QueueUp($uuid: UUID!) {
+    queueUp(uuid: $uuid)
   }
 `);
 const QueueDownMutation = graphql(`
-  mutation QueueDown($hash: InfoHash!) {
-    queueDown(infoHash: $hash)
+  mutation QueueDown($uuid: UUID!) {
+    queueDown(uuid: $uuid)
   }
 `);
 const QueueBottomMutation = graphql(`
-  mutation QueueBottom($hash: InfoHash!) {
-    queueBottom(infoHash: $hash)
+  mutation QueueBottom($uuid: UUID!) {
+    queueBottom(uuid: $uuid)
   }
 `);
 
 const SetQueuePositionMutation = graphql(`
-  mutation SetQueuePosition($hash: InfoHash!, $position: Int!) {
-    setQueuePosition(infoHash: $hash, position: $position)
+  mutation SetQueuePosition($uuid: UUID!, $position: Int!) {
+    setQueuePosition(uuid: $uuid, position: $position)
   }
 `);
 
 const SetTorrentLimitsMutation = graphql(`
   mutation SetTorrentLimits(
-    $hash: InfoHash!
+    $uuid: UUID!
     $uploadLimit: Int
     $downloadLimit: Int
     $maxUploads: Int
     $maxConnections: Int
   ) {
     setTorrentLimits(
-      infoHash: $hash
+      uuid: $uuid
       uploadLimit: $uploadLimit
       downloadLimit: $downloadLimit
       maxUploads: $maxUploads
@@ -131,8 +131,8 @@ const AddTorrentMutation = graphql(`
 `);
 
 const MagnetUriQuery = graphql(`
-  query MagnetUri($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+  query MagnetUri($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       magnetUri
     }
   }
@@ -150,32 +150,32 @@ const ResumeSessionMutation = graphql(`
 `);
 
 const SetFilePrioritiesMutation = graphql(`
-  mutation SetFilePriorities($hash: InfoHash!, $priorities: [Int!]!) {
-    setFilePriorities(infoHash: $hash, priorities: $priorities)
+  mutation SetFilePriorities($uuid: UUID!, $priorities: [Int!]!) {
+    setFilePriorities(uuid: $uuid, priorities: $priorities)
   }
 `);
 
 const RenameFileMutation = graphql(`
-  mutation RenameFile($hash: InfoHash!, $index: Int!, $name: String!) {
-    renameFile(infoHash: $hash, index: $index, name: $name)
+  mutation RenameFile($uuid: UUID!, $index: Int!, $name: String!) {
+    renameFile(uuid: $uuid, index: $index, name: $name)
   }
 `);
 
 const AddTrackerMutation = graphql(`
-  mutation AddTracker($hash: InfoHash!, $url: String!, $tier: Int!) {
-    addTracker(infoHash: $hash, url: $url, tier: $tier)
+  mutation AddTracker($uuid: UUID!, $url: String!, $tier: Int!) {
+    addTracker(uuid: $uuid, url: $url, tier: $tier)
   }
 `);
 
 const ReplaceTrackersMutation = graphql(`
-  mutation ReplaceTrackers($hash: InfoHash!, $trackers: [TrackerInput!]!) {
-    replaceTrackers(infoHash: $hash, trackers: $trackers)
+  mutation ReplaceTrackers($uuid: UUID!, $trackers: [TrackerInput!]!) {
+    replaceTrackers(uuid: $uuid, trackers: $trackers)
   }
 `);
 
 const ScrapeTrackerMutation = graphql(`
-  mutation ScrapeTracker($hash: InfoHash!, $trackerIndex: Int!) {
-    scrapeTracker(infoHash: $hash, trackerIndex: $trackerIndex) {
+  mutation ScrapeTracker($uuid: UUID!, $trackerIndex: Int!) {
+    scrapeTracker(uuid: $uuid, trackerIndex: $trackerIndex) {
       trackerUrl
       complete
       incomplete
@@ -184,92 +184,92 @@ const ScrapeTrackerMutation = graphql(`
 `);
 
 const AddUrlSeedMutation = graphql(`
-  mutation AddUrlSeed($hash: InfoHash!, $url: String!) {
-    addUrlSeed(infoHash: $hash, url: $url)
+  mutation AddUrlSeed($uuid: UUID!, $url: String!) {
+    addUrlSeed(uuid: $uuid, url: $url)
   }
 `);
 
 const RemoveUrlSeedMutation = graphql(`
-  mutation RemoveUrlSeed($hash: InfoHash!, $url: String!) {
-    removeUrlSeed(infoHash: $hash, url: $url)
+  mutation RemoveUrlSeed($uuid: UUID!, $url: String!) {
+    removeUrlSeed(uuid: $uuid, url: $url)
   }
 `);
 
 const ConnectPeerMutation = graphql(`
-  mutation ConnectPeer($hash: InfoHash!, $address: String!) {
-    connectPeer(infoHash: $hash, address: $address)
+  mutation ConnectPeer($uuid: UUID!, $address: String!) {
+    connectPeer(uuid: $uuid, address: $address)
   }
 `);
 
 export const mutations = {
-  pause: (hash: string, graceful = false) => request(PauseTorrentMutation, { hash, graceful }),
-  resume: (hash: string) => request(ResumeTorrentMutation, { hash }),
-  setFlags: (hash: string, set: TorrentFlag[], unset: TorrentFlag[]) =>
-    request(SetTorrentFlagsMutation, { hash, set, unset }),
-  remove: (hash: string, deleteFiles: boolean) =>
-    request(RemoveTorrentMutation, { hash, deleteFiles }),
-  recheck: (hash: string) => request(ForceRecheckMutation, { hash }),
-  reannounce: (hash: string, seconds = 0, trackerIndex = -1) =>
-    request(ForceReannounceMutation, { hash, seconds, trackerIndex }),
-  dhtAnnounce: (hash: string) => request(ForceDhtAnnounceMutation, { hash }),
-  clearError: (hash: string) => request(ClearErrorMutation, { hash }),
-  flushCache: (hash: string) => request(FlushCacheMutation, { hash }),
-  saveResumeData: (hash: string) => request(SaveResumeDataMutation, { hash }),
-  moveStorage: (hash: string, path: string, mode: MoveMode) =>
+  pause: (uuid: string, graceful = false) => request(PauseTorrentMutation, { uuid, graceful }),
+  resume: (uuid: string) => request(ResumeTorrentMutation, { uuid }),
+  setFlags: (uuid: string, set: TorrentFlag[], unset: TorrentFlag[]) =>
+    request(SetTorrentFlagsMutation, { uuid, set, unset }),
+  remove: (uuid: string, deleteFiles: boolean) =>
+    request(RemoveTorrentMutation, { uuid, deleteFiles }),
+  recheck: (uuid: string) => request(ForceRecheckMutation, { uuid }),
+  reannounce: (uuid: string, seconds = 0, trackerIndex = -1) =>
+    request(ForceReannounceMutation, { uuid, seconds, trackerIndex }),
+  dhtAnnounce: (uuid: string) => request(ForceDhtAnnounceMutation, { uuid }),
+  clearError: (uuid: string) => request(ClearErrorMutation, { uuid }),
+  flushCache: (uuid: string) => request(FlushCacheMutation, { uuid }),
+  saveResumeData: (uuid: string) => request(SaveResumeDataMutation, { uuid }),
+  moveStorage: (uuid: string, path: string, mode: MoveMode) =>
     // Waits server-side for confirmation, up to 10 minutes.
-    request(MoveStorageMutation, { hash, path, mode }, { timeoutMs: 610_000 }),
-  queueTop: (hash: string) => request(QueueTopMutation, { hash }),
-  queueUp: (hash: string) => request(QueueUpMutation, { hash }),
-  queueDown: (hash: string) => request(QueueDownMutation, { hash }),
-  queueBottom: (hash: string) => request(QueueBottomMutation, { hash }),
-  setQueuePosition: (hash: string, position: number) =>
-    request(SetQueuePositionMutation, { hash, position }),
+    request(MoveStorageMutation, { uuid, path, mode }, { timeoutMs: 610_000 }),
+  queueTop: (uuid: string) => request(QueueTopMutation, { uuid }),
+  queueUp: (uuid: string) => request(QueueUpMutation, { uuid }),
+  queueDown: (uuid: string) => request(QueueDownMutation, { uuid }),
+  queueBottom: (uuid: string) => request(QueueBottomMutation, { uuid }),
+  setQueuePosition: (uuid: string, position: number) =>
+    request(SetQueuePositionMutation, { uuid, position }),
   setLimits: (
-    hash: string,
+    uuid: string,
     limits: {
       uploadLimit?: number;
       downloadLimit?: number;
       maxUploads?: number;
       maxConnections?: number;
     },
-  ) => request(SetTorrentLimitsMutation, { hash, ...limits }),
+  ) => request(SetTorrentLimitsMutation, { uuid, ...limits }),
   addTorrent: (input: AddTorrentInput) => request(AddTorrentMutation, { input }),
-  magnetUri: async (hash: string) =>
-    (await request(MagnetUriQuery, { hash })).torrent?.magnetUri ?? null,
+  magnetUri: async (uuid: string) =>
+    (await request(MagnetUriQuery, { uuid })).torrent?.magnetUri ?? null,
   pauseSession: () => request(PauseSessionMutation),
   resumeSession: () => request(ResumeSessionMutation),
   /** Always send the complete list: an omitted tail gets default 4. */
-  setFilePriorities: (hash: string, priorities: number[]) =>
-    request(SetFilePrioritiesMutation, { hash, priorities }),
+  setFilePriorities: (uuid: string, priorities: number[]) =>
+    request(SetFilePrioritiesMutation, { uuid, priorities }),
   /** Waits server-side for rename confirmation (serialized per torrent). */
-  renameFile: (hash: string, index: number, name: string) =>
-    request(RenameFileMutation, { hash, index, name }),
-  addTracker: (hash: string, url: string, tier: number) =>
-    request(AddTrackerMutation, { hash, url, tier }),
+  renameFile: (uuid: string, index: number, name: string) =>
+    request(RenameFileMutation, { uuid, index, name }),
+  addTracker: (uuid: string, url: string, tier: number) =>
+    request(AddTrackerMutation, { uuid, url, tier }),
   /** Replaces the full tracker list; an empty list removes all trackers. */
-  replaceTrackers: (hash: string, trackers: TrackerInput[]) =>
-    request(ReplaceTrackersMutation, { hash, trackers }),
+  replaceTrackers: (uuid: string, trackers: TrackerInput[]) =>
+    request(ReplaceTrackersMutation, { uuid, trackers }),
   /** Waits up to 30 s for the tracker's scrape response. */
-  scrapeTracker: (hash: string, trackerIndex: number) =>
-    request(ScrapeTrackerMutation, { hash, trackerIndex }),
-  addUrlSeed: (hash: string, url: string) => request(AddUrlSeedMutation, { hash, url }),
-  removeUrlSeed: (hash: string, url: string) => request(RemoveUrlSeedMutation, { hash, url }),
-  connectPeer: (hash: string, address: string) => request(ConnectPeerMutation, { hash, address }),
+  scrapeTracker: (uuid: string, trackerIndex: number) =>
+    request(ScrapeTrackerMutation, { uuid, trackerIndex }),
+  addUrlSeed: (uuid: string, url: string) => request(AddUrlSeedMutation, { uuid, url }),
+  removeUrlSeed: (uuid: string, url: string) => request(RemoveUrlSeedMutation, { uuid, url }),
+  connectPeer: (uuid: string, address: string) => request(ConnectPeerMutation, { uuid, address }),
 };
 
 /** Sequentially apply one mutation to many torrents; collect failures. */
 export async function bulk(
-  hashes: readonly string[],
-  fn: (hash: string) => Promise<unknown>,
-): Promise<{ ok: number; errors: { hash: string; message: string }[] }> {
+  uuids: readonly string[],
+  fn: (uuid: string) => Promise<unknown>,
+): Promise<{ ok: number; errors: { uuid: string; message: string }[] }> {
   let ok = 0;
-  const errors: { hash: string; message: string }[] = [];
-  for (const hash of hashes) {
+  const errors: { uuid: string; message: string }[] = [];
+  for (const uuid of uuids) {
     try {
-      await fn(hash);
+      await fn(uuid);
       ok++;
     } catch (err) {
-      errors.push({ hash, message: err instanceof Error ? err.message : String(err) });
+      errors.push({ uuid, message: err instanceof Error ? err.message : String(err) });
     }
   }
   return { ok, errors };

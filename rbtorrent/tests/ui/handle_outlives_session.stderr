@@ -3,7 +3,7 @@ error[E0505]: cannot move out of `session` because it is borrowed
    |
 10 | async fn misuse(session: rbtorrent::Session) {
    |                 ------- binding `session` declared here
-11 |     let handle = session.find_torrent(rbtorrent::InfoHash::new(None, None));
+11 |     let handle = session.find_torrent_by_token(1);
    |                  ------- borrow of `session` occurs here
 12 |     session.close().await;
    |     ^^^^^^^ move out of `session` occurs here

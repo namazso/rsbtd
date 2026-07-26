@@ -24,15 +24,12 @@ import { useTorrents } from '@/store/torrents';
  */
 import { useTrackers } from './useDetailQueries';
 
-export function TrackersTab({ hash, visible }: { hash: string; visible: boolean }) {
+export function TrackersTab({ uuid, visible }: { uuid: string; visible: boolean }) {
   const { t } = useTranslation(['details', 'common']);
-  const query = useTrackers(hash, visible);
+  const query = useTrackers(uuid, visible);
   const trackers = query.data?.data?.torrent?.trackers ?? [];
   const urlSeeds = query.data?.data?.torrent?.urlSeeds ?? [];
-  const currentTracker = useTorrents((s) => {
-    const canonical = s.resolve(hash) ?? hash;
-    return s.byHash.get(canonical)?.currentTracker ?? null;
-  });
+  const currentTracker = useTorrents((s) => s.byUuid.get(uuid)?.currentTracker ?? null);
   const [addOpen, setAddOpen] = useState(false);
   const [seedUrl, setSeedUrl] = useState('');
 
@@ -45,7 +42,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
 
   const scrape = (index: number) => {
     void mutations
-      .scrapeTracker(hash, index)
+      .scrapeTracker(uuid, index)
       .then((r) =>
         toast.success(
           t('trackers.scrapeResult', {
@@ -59,7 +56,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
   };
 
   const reannounce = (index: number) => {
-    void mutations.reannounce(hash, 0, index).catch((err: unknown) => {
+    void mutations.reannounce(uuid, 0, index).catch((err: unknown) => {
       toast.error(err instanceof Error ? err.message : String(err));
     });
   };
@@ -69,7 +66,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
       .filter((tracker) => tracker.url !== url)
       .map((tracker) => ({ url: tracker.url, tier: tracker.tier }));
     void mutations
-      .replaceTrackers(hash, remaining)
+      .replaceTrackers(uuid, remaining)
       .then(() => query.refetch())
       .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)));
   };
@@ -195,7 +192,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
               disabled={seedUrl.trim() === ''}
               onClick={() => {
                 void mutations
-                  .addUrlSeed(hash, seedUrl.trim())
+                  .addUrlSeed(uuid, seedUrl.trim())
                   .then(() => {
                     setSeedUrl('');
                     return query.refetch();
@@ -232,7 +229,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
                       aria-label={t('trackers.removeSeed')}
                       onClick={() => {
                         void mutations
-                          .removeUrlSeed(hash, url)
+                          .removeUrlSeed(uuid, url)
                           .then(() => query.refetch())
                           .catch((err: unknown) =>
                             toast.error(err instanceof Error ? err.message : String(err)),
@@ -250,7 +247,7 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
       </div>
 
       <AddTrackerDialog
-        hash={hash}
+        uuid={uuid}
         open={addOpen}
         onClose={() => setAddOpen(false)}
         onAdded={() => void query.refetch()}
@@ -260,12 +257,12 @@ export function TrackersTab({ hash, visible }: { hash: string; visible: boolean 
 }
 
 function AddTrackerDialog({
-  hash,
+  uuid,
   open,
   onClose,
   onAdded,
 }: {
-  hash: string;
+  uuid: string;
   open: boolean;
   onClose: () => void;
   onAdded: () => void;
@@ -277,7 +274,7 @@ function AddTrackerDialog({
   const submit = async () => {
     const tierNum = Number(tier);
     try {
-      await mutations.addTracker(hash, url.trim(), Number.isFinite(tierNum) ? tierNum : 0);
+      await mutations.addTracker(uuid, url.trim(), Number.isFinite(tierNum) ? tierNum : 0);
       setUrl('');
       onAdded();
       onClose();

@@ -217,137 +217,138 @@ that this file matches the generator's inputs).
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | L16, L15, L129 |
 | untrusted | 0.9.0 | ISC | L130 |
 | utf8parse | 0.2.2 | Apache-2.0 OR MIT | L16, L131 |
-| want | 0.3.1 | MIT | L132 |
-| windows | 0.62.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-collections | 0.3.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-core | 0.62.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-future | 0.3.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-implement | 0.60.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-interface | 0.59.3 | MIT OR Apache-2.0 | L133, L134 |
-| windows-link | 0.2.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows-numerics | 0.3.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows-registry | 0.6.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows-result | 0.4.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows-strings | 0.5.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows-sys | 0.52.0 | MIT OR Apache-2.0 | L133, L134 |
-| windows-sys | 0.61.2 | MIT OR Apache-2.0 | L133, L134 |
-| windows-targets | 0.52.6 | MIT OR Apache-2.0 | L133, L134 |
-| windows-threading | 0.2.1 | MIT OR Apache-2.0 | L133, L134 |
-| windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 | L133, L134 |
+| uuid | 1.24.0 | Apache-2.0 OR MIT | L6, L132 |
+| want | 0.3.1 | MIT | L133 |
+| windows | 0.62.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-collections | 0.3.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-core | 0.62.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-future | 0.3.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-implement | 0.60.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-interface | 0.59.3 | MIT OR Apache-2.0 | L134, L135 |
+| windows-link | 0.2.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows-numerics | 0.3.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows-registry | 0.6.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows-result | 0.4.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows-strings | 0.5.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows-sys | 0.52.0 | MIT OR Apache-2.0 | L134, L135 |
+| windows-sys | 0.61.2 | MIT OR Apache-2.0 | L134, L135 |
+| windows-targets | 0.52.6 | MIT OR Apache-2.0 | L134, L135 |
+| windows-threading | 0.2.1 | MIT OR Apache-2.0 | L134, L135 |
+| windows_aarch64_msvc | 0.52.6 | MIT OR Apache-2.0 | L134, L135 |
 | winnow | 0.7.15 | MIT | L15 |
 | winnow | 1.0.4 | MIT | L15 |
-| zerocopy | 0.8.54 | BSD-2-Clause OR Apache-2.0 OR MIT | L135, L136, L137 |
-| zeroize | 1.9.0 | Apache-2.0 OR MIT | L6, L138 |
+| zerocopy | 0.8.54 | BSD-2-Clause OR Apache-2.0 OR MIT | L136, L137, L138 |
+| zeroize | 1.9.0 | Apache-2.0 OR MIT | L6, L139 |
 | zmij | 1.0.23 | MIT | L15 |
 
 ## Web UI npm packages
 
 | Package | Version | License | Text |
 |---|---|---|---|
-| @babel/runtime | 7.29.7 | MIT | L139 |
-| @floating-ui/core | 1.8.0 | MIT | L140 |
-| @floating-ui/dom | 1.8.0 | MIT | L140 |
-| @floating-ui/react-dom | 2.1.9 | MIT | L140 |
-| @floating-ui/utils | 0.2.12 | MIT | L140 |
-| @radix-ui/number | 1.1.2 | MIT | L141 |
-| @radix-ui/primitive | 1.1.5 | MIT | L141 |
-| @radix-ui/react-accessible-icon | 1.1.11 | MIT | L141 |
-| @radix-ui/react-accordion | 1.2.16 | MIT | L141 |
-| @radix-ui/react-alert-dialog | 1.1.19 | MIT | L141 |
-| @radix-ui/react-arrow | 1.1.11 | MIT | L141 |
-| @radix-ui/react-aspect-ratio | 1.1.11 | MIT | L141 |
-| @radix-ui/react-avatar | 1.2.2 | MIT | L141 |
-| @radix-ui/react-checkbox | 1.3.7 | MIT | L141 |
-| @radix-ui/react-collapsible | 1.1.16 | MIT | L141 |
-| @radix-ui/react-collection | 1.1.12 | MIT | L141 |
-| @radix-ui/react-compose-refs | 1.1.3 | MIT | L141 |
-| @radix-ui/react-context | 1.2.0 | MIT | L141 |
-| @radix-ui/react-context-menu | 2.3.3 | MIT | L141 |
-| @radix-ui/react-dialog | 1.1.19 | MIT | L141 |
-| @radix-ui/react-direction | 1.1.2 | MIT | L141 |
-| @radix-ui/react-dismissable-layer | 1.1.15 | MIT | L141 |
-| @radix-ui/react-dropdown-menu | 2.1.20 | MIT | L141 |
-| @radix-ui/react-focus-guards | 1.1.4 | MIT | L141 |
-| @radix-ui/react-focus-scope | 1.1.12 | MIT | L141 |
-| @radix-ui/react-form | 0.1.12 | MIT | L141 |
-| @radix-ui/react-hover-card | 1.1.19 | MIT | L141 |
-| @radix-ui/react-id | 1.1.2 | MIT | L141 |
-| @radix-ui/react-label | 2.1.11 | MIT | L141 |
-| @radix-ui/react-menu | 2.1.20 | MIT | L141 |
-| @radix-ui/react-menubar | 1.1.20 | MIT | L141 |
-| @radix-ui/react-navigation-menu | 1.2.18 | MIT | L141 |
-| @radix-ui/react-one-time-password-field | 0.1.12 | MIT | L141 |
-| @radix-ui/react-password-toggle-field | 0.1.7 | MIT | L141 |
-| @radix-ui/react-popover | 1.1.19 | MIT | L141 |
-| @radix-ui/react-popper | 1.3.3 | MIT | L141 |
-| @radix-ui/react-portal | 1.1.13 | MIT | L141 |
-| @radix-ui/react-presence | 1.1.7 | MIT | L141 |
-| @radix-ui/react-primitive | 2.1.7 | MIT | L141 |
-| @radix-ui/react-progress | 1.1.12 | MIT | L141 |
-| @radix-ui/react-radio-group | 1.4.3 | MIT | L141 |
-| @radix-ui/react-roving-focus | 1.1.15 | MIT | L141 |
-| @radix-ui/react-scroll-area | 1.2.14 | MIT | L141 |
-| @radix-ui/react-select | 2.3.3 | MIT | L141 |
-| @radix-ui/react-separator | 1.1.11 | MIT | L141 |
-| @radix-ui/react-slider | 1.4.3 | MIT | L141 |
-| @radix-ui/react-slot | 1.3.0 | MIT | L141 |
-| @radix-ui/react-switch | 1.3.3 | MIT | L141 |
-| @radix-ui/react-tabs | 1.1.17 | MIT | L141 |
-| @radix-ui/react-toast | 1.2.19 | MIT | L141 |
-| @radix-ui/react-toggle | 1.1.14 | MIT | L141 |
-| @radix-ui/react-toggle-group | 1.1.15 | MIT | L141 |
-| @radix-ui/react-toolbar | 1.1.15 | MIT | L141 |
-| @radix-ui/react-tooltip | 1.2.12 | MIT | L141 |
-| @radix-ui/react-use-callback-ref | 1.1.2 | MIT | L141 |
-| @radix-ui/react-use-controllable-state | 1.2.3 | MIT | L141 |
-| @radix-ui/react-use-effect-event | 0.0.3 | MIT | L141 |
-| @radix-ui/react-use-escape-keydown | 1.1.3 | MIT | L141 |
-| @radix-ui/react-use-is-hydrated | 0.1.1 | MIT | L141 |
-| @radix-ui/react-use-layout-effect | 1.1.2 | MIT | L141 |
-| @radix-ui/react-use-previous | 1.1.2 | MIT | L141 |
-| @radix-ui/react-use-rect | 1.1.2 | MIT | L141 |
-| @radix-ui/react-use-size | 1.1.2 | MIT | L141 |
-| @radix-ui/react-visually-hidden | 1.2.7 | MIT | L141 |
-| @radix-ui/rect | 1.1.2 | MIT | L141 |
-| @tanstack/query-core | 5.101.2 | MIT | L142 |
-| @tanstack/react-query | 5.101.2 | MIT | L142 |
-| @tanstack/react-virtual | 3.14.6 | MIT | L142 |
-| @tanstack/virtual-core | 3.17.4 | MIT | L142 |
-| @types/react | 19.2.17 | MIT | L134 |
-| @types/react-dom | 19.2.3 | MIT | L134 |
-| aria-hidden | 1.2.6 | MIT | L143 |
-| class-variance-authority | 0.7.1 | Apache-2.0 | L144 |
-| clsx | 2.1.1 | MIT | L145 |
-| cookie-es | 3.1.1 | MIT | L146 |
-| csstype | 3.2.3 | MIT | L147 |
-| detect-node-es | 1.1.0 | MIT | L148 |
-| get-nonce | 1.0.1 | MIT | L149 |
-| graphql | 16.14.2 | MIT | L150 |
-| graphql-ws | 6.1.0 | MIT | L151 |
+| @babel/runtime | 7.29.7 | MIT | L140 |
+| @floating-ui/core | 1.8.0 | MIT | L141 |
+| @floating-ui/dom | 1.8.0 | MIT | L141 |
+| @floating-ui/react-dom | 2.1.9 | MIT | L141 |
+| @floating-ui/utils | 0.2.12 | MIT | L141 |
+| @radix-ui/number | 1.1.2 | MIT | L142 |
+| @radix-ui/primitive | 1.1.5 | MIT | L142 |
+| @radix-ui/react-accessible-icon | 1.1.11 | MIT | L142 |
+| @radix-ui/react-accordion | 1.2.16 | MIT | L142 |
+| @radix-ui/react-alert-dialog | 1.1.19 | MIT | L142 |
+| @radix-ui/react-arrow | 1.1.11 | MIT | L142 |
+| @radix-ui/react-aspect-ratio | 1.1.11 | MIT | L142 |
+| @radix-ui/react-avatar | 1.2.2 | MIT | L142 |
+| @radix-ui/react-checkbox | 1.3.7 | MIT | L142 |
+| @radix-ui/react-collapsible | 1.1.16 | MIT | L142 |
+| @radix-ui/react-collection | 1.1.12 | MIT | L142 |
+| @radix-ui/react-compose-refs | 1.1.3 | MIT | L142 |
+| @radix-ui/react-context | 1.2.0 | MIT | L142 |
+| @radix-ui/react-context-menu | 2.3.3 | MIT | L142 |
+| @radix-ui/react-dialog | 1.1.19 | MIT | L142 |
+| @radix-ui/react-direction | 1.1.2 | MIT | L142 |
+| @radix-ui/react-dismissable-layer | 1.1.15 | MIT | L142 |
+| @radix-ui/react-dropdown-menu | 2.1.20 | MIT | L142 |
+| @radix-ui/react-focus-guards | 1.1.4 | MIT | L142 |
+| @radix-ui/react-focus-scope | 1.1.12 | MIT | L142 |
+| @radix-ui/react-form | 0.1.12 | MIT | L142 |
+| @radix-ui/react-hover-card | 1.1.19 | MIT | L142 |
+| @radix-ui/react-id | 1.1.2 | MIT | L142 |
+| @radix-ui/react-label | 2.1.11 | MIT | L142 |
+| @radix-ui/react-menu | 2.1.20 | MIT | L142 |
+| @radix-ui/react-menubar | 1.1.20 | MIT | L142 |
+| @radix-ui/react-navigation-menu | 1.2.18 | MIT | L142 |
+| @radix-ui/react-one-time-password-field | 0.1.12 | MIT | L142 |
+| @radix-ui/react-password-toggle-field | 0.1.7 | MIT | L142 |
+| @radix-ui/react-popover | 1.1.19 | MIT | L142 |
+| @radix-ui/react-popper | 1.3.3 | MIT | L142 |
+| @radix-ui/react-portal | 1.1.13 | MIT | L142 |
+| @radix-ui/react-presence | 1.1.7 | MIT | L142 |
+| @radix-ui/react-primitive | 2.1.7 | MIT | L142 |
+| @radix-ui/react-progress | 1.1.12 | MIT | L142 |
+| @radix-ui/react-radio-group | 1.4.3 | MIT | L142 |
+| @radix-ui/react-roving-focus | 1.1.15 | MIT | L142 |
+| @radix-ui/react-scroll-area | 1.2.14 | MIT | L142 |
+| @radix-ui/react-select | 2.3.3 | MIT | L142 |
+| @radix-ui/react-separator | 1.1.11 | MIT | L142 |
+| @radix-ui/react-slider | 1.4.3 | MIT | L142 |
+| @radix-ui/react-slot | 1.3.0 | MIT | L142 |
+| @radix-ui/react-switch | 1.3.3 | MIT | L142 |
+| @radix-ui/react-tabs | 1.1.17 | MIT | L142 |
+| @radix-ui/react-toast | 1.2.19 | MIT | L142 |
+| @radix-ui/react-toggle | 1.1.14 | MIT | L142 |
+| @radix-ui/react-toggle-group | 1.1.15 | MIT | L142 |
+| @radix-ui/react-toolbar | 1.1.15 | MIT | L142 |
+| @radix-ui/react-tooltip | 1.2.12 | MIT | L142 |
+| @radix-ui/react-use-callback-ref | 1.1.2 | MIT | L142 |
+| @radix-ui/react-use-controllable-state | 1.2.3 | MIT | L142 |
+| @radix-ui/react-use-effect-event | 0.0.3 | MIT | L142 |
+| @radix-ui/react-use-escape-keydown | 1.1.3 | MIT | L142 |
+| @radix-ui/react-use-is-hydrated | 0.1.1 | MIT | L142 |
+| @radix-ui/react-use-layout-effect | 1.1.2 | MIT | L142 |
+| @radix-ui/react-use-previous | 1.1.2 | MIT | L142 |
+| @radix-ui/react-use-rect | 1.1.2 | MIT | L142 |
+| @radix-ui/react-use-size | 1.1.2 | MIT | L142 |
+| @radix-ui/react-visually-hidden | 1.2.7 | MIT | L142 |
+| @radix-ui/rect | 1.1.2 | MIT | L142 |
+| @tanstack/query-core | 5.101.2 | MIT | L143 |
+| @tanstack/react-query | 5.101.2 | MIT | L143 |
+| @tanstack/react-virtual | 3.14.6 | MIT | L143 |
+| @tanstack/virtual-core | 3.17.4 | MIT | L143 |
+| @types/react | 19.2.17 | MIT | L135 |
+| @types/react-dom | 19.2.3 | MIT | L135 |
+| aria-hidden | 1.2.6 | MIT | L144 |
+| class-variance-authority | 0.7.1 | Apache-2.0 | L145 |
+| clsx | 2.1.1 | MIT | L146 |
+| cookie-es | 3.1.1 | MIT | L147 |
+| csstype | 3.2.3 | MIT | L148 |
+| detect-node-es | 1.1.0 | MIT | L149 |
+| get-nonce | 1.0.1 | MIT | L150 |
+| graphql | 16.14.2 | MIT | L151 |
+| graphql-ws | 6.1.0 | MIT | L152 |
 | html-parse-stringify | 3.0.1 | MIT | L7 |
-| i18next | 26.3.6 | MIT | L152 |
-| lucide-react | 1.24.0 | ISC | L153 |
-| radix-ui | 1.6.2 | MIT | L141 |
-| react | 19.2.7 | MIT | L154 |
-| react-dom | 19.2.7 | MIT | L154 |
-| react-i18next | 17.0.10 | MIT | L155 |
-| react-remove-scroll | 2.7.2 | MIT | L143 |
+| i18next | 26.3.6 | MIT | L153 |
+| lucide-react | 1.24.0 | ISC | L154 |
+| radix-ui | 1.6.2 | MIT | L142 |
+| react | 19.2.7 | MIT | L155 |
+| react-dom | 19.2.7 | MIT | L155 |
+| react-i18next | 17.0.10 | MIT | L156 |
+| react-remove-scroll | 2.7.2 | MIT | L144 |
 | react-remove-scroll-bar | 2.3.8 | MIT | L7 |
-| react-router | 8.2.0 | MIT | L156 |
-| react-style-singleton | 2.2.3 | MIT | L143 |
-| scheduler | 0.27.0 | MIT | L154 |
-| sonner | 2.0.7 | MIT | L157 |
-| tailwind-merge | 3.6.0 | MIT | L158 |
-| tslib | 2.8.1 | 0BSD | L159, L160 |
-| typescript | 6.0.3 | Apache-2.0 | L161 |
-| uplot | 1.6.32 | MIT | L162 |
-| use-callback-ref | 1.3.3 | MIT | L143 |
-| use-sidecar | 1.1.3 | MIT | L143 |
-| use-sync-external-store | 1.6.0 | MIT | L154 |
-| vaul | 1.1.2 | MIT | L157 |
-| void-elements | 3.1.0 | MIT | L163 |
-| ws | 8.21.1 | MIT | L164 |
-| zustand | 5.0.14 | MIT | L165 |
+| react-router | 8.2.0 | MIT | L157 |
+| react-style-singleton | 2.2.3 | MIT | L144 |
+| scheduler | 0.27.0 | MIT | L155 |
+| sonner | 2.0.7 | MIT | L158 |
+| tailwind-merge | 3.6.0 | MIT | L159 |
+| tslib | 2.8.1 | 0BSD | L160, L161 |
+| typescript | 6.0.3 | Apache-2.0 | L162 |
+| uplot | 1.6.32 | MIT | L163 |
+| use-callback-ref | 1.3.3 | MIT | L144 |
+| use-sidecar | 1.1.3 | MIT | L144 |
+| use-sync-external-store | 1.6.0 | MIT | L155 |
+| vaul | 1.1.2 | MIT | L158 |
+| void-elements | 3.1.0 | MIT | L164 |
+| ws | 8.21.1 | MIT | L165 |
+| zustand | 5.0.14 | MIT | L166 |
 
 ## License texts
 
@@ -8072,6 +8073,37 @@ DEALINGS IN THE SOFTWARE.
 ### L132
 
 ````text
+Copyright (c) 2014 The Rust Project Developers
+Copyright (c) 2018 Ashley Mannix, Christopher Armstrong, Dylan DPC, Hunar Roop Kahlon
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+````
+
+### L133
+
+````text
 Copyright (c) 2018-2019 Sean McArthur
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -8093,7 +8125,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ````
 
-### L133
+### L134
 
 ````text
                                  Apache License
@@ -8299,7 +8331,7 @@ THE SOFTWARE.
    limitations under the License.
 ````
 
-### L134
+### L135
 
 ````text
     MIT License
@@ -8325,7 +8357,7 @@ THE SOFTWARE.
     SOFTWARE
 ````
 
-### L135
+### L136
 
 ````text
                                  Apache License
@@ -8531,7 +8563,7 @@ THE SOFTWARE.
    limitations under the License.
 ````
 
-### L136
+### L137
 
 ````text
 Copyright 2019 The Fuchsia Authors.
@@ -8560,7 +8592,7 @@ THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ````
 
-### L137
+### L138
 
 ````text
 Copyright 2023 The Fuchsia Authors
@@ -8590,7 +8622,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ````
 
-### L138
+### L139
 
 ````text
 Copyright (c) 2018-2026 The RustCrypto Project Developers
@@ -8620,7 +8652,7 @@ IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ````
 
-### L139
+### L140
 
 ````text
 MIT License
@@ -8647,7 +8679,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L140
+### L141
 
 ````text
 MIT License
@@ -8672,7 +8704,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L141
+### L142
 
 ````text
 MIT License
@@ -8698,7 +8730,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L142
+### L143
 
 ````text
 MIT License
@@ -8724,7 +8756,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L143
+### L144
 
 ````text
 MIT License
@@ -8750,7 +8782,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L144
+### L145
 
 ````text
                                  Apache License
@@ -8945,7 +8977,7 @@ SOFTWARE.
    limitations under the License.
 ````
 
-### L145
+### L146
 
 ````text
 MIT License
@@ -8959,7 +8991,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L146
+### L147
 
 ````text
 MIT License
@@ -8992,36 +9024,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L147
-
-````text
-Copyright (c) 2017-2018 Fredrik Nicol
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-````
-
 ### L148
 
 ````text
-MIT License
-
-Copyright (c) 2017 Ilya Kantor
+Copyright (c) 2017-2018 Fredrik Nicol
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9047,7 +9053,7 @@ SOFTWARE.
 ````text
 MIT License
 
-Copyright (c) 2020 Anton Korzunov
+Copyright (c) 2017 Ilya Kantor
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9073,7 +9079,7 @@ SOFTWARE.
 ````text
 MIT License
 
-Copyright (c) GraphQL Contributors
+Copyright (c) 2020 Anton Korzunov
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9099,6 +9105,32 @@ SOFTWARE.
 ````text
 MIT License
 
+Copyright (c) GraphQL Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+````
+
+### L152
+
+````text
+MIT License
+
 Copyright (c) 2020 Denis Badurina
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -9108,7 +9140,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L152
+### L153
 
 ````text
 The MIT License (MIT)
@@ -9134,7 +9166,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L153
+### L154
 
 ````text
 ISC License
@@ -9182,7 +9214,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L154
+### L155
 
 ````text
 MIT License
@@ -9208,7 +9240,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L155
+### L156
 
 ````text
 The MIT License (MIT)
@@ -9234,7 +9266,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L156
+### L157
 
 ````text
 MIT License
@@ -9262,7 +9294,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L157
+### L158
 
 ````text
 MIT License
@@ -9288,7 +9320,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L158
+### L159
 
 ````text
 MIT License
@@ -9314,7 +9346,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ````
 
-### L159
+### L160
 
 ````text
 /******************************************************************************
@@ -9333,7 +9365,7 @@ PERFORMANCE OF THIS SOFTWARE.
 ***************************************************************************** */
 ````
 
-### L160
+### L161
 
 ````text
 Copyright (c) Microsoft Corporation.
@@ -9350,7 +9382,7 @@ OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ````
 
-### L161
+### L162
 
 ````text
 Apache License
@@ -9410,7 +9442,7 @@ If the Work includes a "NOTICE" text file as part of its distribution, then any 
 END OF TERMS AND CONDITIONS
 ````
 
-### L162
+### L163
 
 ````text
 The MIT License (MIT)
@@ -9436,7 +9468,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ````
 
-### L163
+### L164
 
 ````text
 (The MIT License)
@@ -9463,7 +9495,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L164
+### L165
 
 ````text
 Copyright (c) 2011 Einar Otto Stangvik <einaros@gmail.com>
@@ -9488,7 +9520,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ````
 
-### L165
+### L166
 
 ````text
 MIT License

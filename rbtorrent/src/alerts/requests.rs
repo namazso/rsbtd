@@ -32,6 +32,11 @@ struct Inner {
     // whole lifetime. Not a pending request: entries persist until the
     // torrent_removed sweep (or teardown), and survive close().
     client_data: HashMap<u64, Arc<dyn ClientData>>,
+    // Live-torrent handles for `Session::find_torrent_by_token`, following
+    // client_data's lifecycle exactly: inserted when an add survives,
+    // swept with it, kept across close() (dropping a RawHandle after
+    // teardown is safe — see `RawHandle`).
+    handles: HashMap<u64, RawHandle>,
 }
 
 /// Shared between the `Session` (which enqueues requests) and the `Alerts`
@@ -123,6 +128,16 @@ impl Registry {
 
     pub(crate) fn client_data(&self, token: u64) -> Option<Arc<dyn ClientData>> {
         self.inner.lock().unwrap().client_data.get(&token).cloned()
+    }
+
+    /// The live handle of the torrent added under `token`, if any.
+    pub(crate) fn torrent_handle(&self, token: u64) -> Option<RawHandle> {
+        self.inner
+            .lock()
+            .unwrap()
+            .handles
+            .get(&token)
+            .map(RawHandle::clone_raw)
     }
 
     /// Replaces a live torrent's data. Replace-only by design: inserting
@@ -226,7 +241,7 @@ impl Registry {
 
     fn resolve_add_torrent(&self, alert: *const sys::ct_alert) {
         // SAFETY: alert is valid; the view borrows the batch.
-        let (token, surviving, result) = unsafe {
+        let (token, stored, result) = unsafe {
             let mut view = sys::ct_add_torrent_view::default();
             if !sys::ct_alert_as_add_torrent(alert, &mut view) {
                 return;
@@ -244,16 +259,20 @@ impl Registry {
             // resolves to the pre-existing torrent, which kept its original
             // userdata (the new attempt's data can never be reached again).
             let surviving = result.is_ok() && sys::ct_torrent_handle_userdata(view.handle) == token;
-            (token, surviving, result)
+            // A surviving add also registers the torrent's live handle.
+            let stored = surviving.then(|| RawHandle::from_ptr(view.handle));
+            (token, stored, result)
         };
         // Regardless of sender presence: the future may be long cancelled
         // (drop-guard) while the data entry still needs error cleanup.
         let (sender, stale_data) = {
             let mut inner = self.inner.lock().unwrap();
-            let stale_data = if surviving {
-                None
-            } else {
-                inner.client_data.remove(&token)
+            let stale_data = match stored {
+                Some(handle) => {
+                    inner.handles.insert(token, handle);
+                    None
+                }
+                None => inner.client_data.remove(&token),
             };
             (inner.add_torrent.remove(&token), stale_data)
         };
@@ -264,9 +283,10 @@ impl Registry {
         }
     }
 
-    /// Reclaims the removed torrent's client data. Best-effort: libtorrent
-    /// can drop the alert on extreme queue overflow (alerts_dropped carries
-    /// no token), leaking the entry until teardown.
+    /// Reclaims the removed torrent's client data and handle. Best-effort:
+    /// libtorrent can drop the alert on extreme queue overflow
+    /// (alerts_dropped carries no token), leaking the entries until
+    /// teardown.
     fn resolve_torrent_removed(&self, alert: *const sys::ct_alert) {
         // SAFETY: alert is valid within the current batch.
         let token = unsafe {
@@ -279,18 +299,22 @@ impl Registry {
         if token == 0 {
             return;
         }
-        let data = {
+        let (data, handle) = {
             let mut inner = self.inner.lock().unwrap();
-            inner.client_data.remove(&token)
+            (
+                inner.client_data.remove(&token),
+                inner.handles.remove(&token),
+            )
         };
         // Dropped outside the lock: a user Drop may re-enter the registry.
         drop(data);
+        drop(handle);
     }
 
     /// Fails every pending request; called on session teardown. Client
-    /// data is deliberately untouched: it belongs to torrents, not pending
-    /// requests, and handles remain usable until the session drops (the
-    /// map dies with the `Arc<Registry>`).
+    /// data and torrent handles are deliberately untouched: they belong to
+    /// torrents, not pending requests, and handles remain usable until the
+    /// session drops (both maps die with the `Arc<Registry>`).
     pub(crate) fn close(&self) {
         // Dropping a sender wakes its receiver; move them out of the lock
         // first (see handle_alerts_dropped).

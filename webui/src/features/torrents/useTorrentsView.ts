@@ -46,7 +46,7 @@ export function categoryPredicate(category: CategoryId): (row: TorrentRow) => bo
 export interface TorrentsView {
   /** Filtered + sorted rows for the list. */
   rows: TorrentRow[];
-  /** View order (canonical hashes) for range selection. */
+  /** View order (uuids) for range selection. */
   order: string[];
   counts: Record<CategoryId, number>;
   total: number;
@@ -66,7 +66,7 @@ export function useTorrentsView(): TorrentsView {
   const sortDesc = layout?.sortDesc ?? false;
 
   return useMemo(() => {
-    const all = [...useTorrents.getState().byHash.values()];
+    const all = [...useTorrents.getState().byUuid.values()];
 
     const counts = Object.fromEntries(CATEGORY_IDS.map((c) => [c, 0])) as Record<
       CategoryId,
@@ -88,7 +88,7 @@ export function useTorrentsView(): TorrentsView {
 
     return {
       rows,
-      order: rows.map((r) => r.infoHash),
+      order: rows.map((r) => r.uuid),
       counts,
       total: all.length,
       totalDownRate,

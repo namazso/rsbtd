@@ -14,10 +14,10 @@ use std::time::Duration;
 use rbtorrent::{AddTorrentParams, SettingsPack, TorrentFlags};
 use rsbtd::config::{Config, Listen};
 use rsbtd::engine::events::{Event, EventKind};
-use rsbtd::engine::registry::parse_info_hash;
 use rsbtd::engine::{Engine, EngineError};
 use tokio::sync::broadcast;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 fn hermetic_settings() -> SettingsPack {
     let mut pack = SettingsPack::new();
@@ -152,7 +152,11 @@ async fn transfer_persist_restore() {
     let mut leech_atp = AddTorrentParams::from_torrent_file(fixture_path()).unwrap();
     leech_atp.set_save_path(leech_data.path().to_str().unwrap());
     let leech_entry = leech.add_torrent(&mut leech_atp).await.unwrap();
-    let info_hash = leech_entry.info_hash;
+    let uuid = leech_entry.uuid;
+    let v1 = leech
+        .with_handle(&leech_entry, |h| h.info_hashes())
+        .unwrap()
+        .v1();
 
     // The initial resume snapshot lands on disk shortly after the add.
     wait_for_event(&mut leech_events, |e| {
@@ -162,11 +166,16 @@ async fn transfer_persist_restore() {
     let resume_file = leech_state
         .path()
         .join("torrents")
-        .join(format!("{}.resume", leech_entry.resume_key));
+        .join(format!("{uuid}.resume"));
     assert!(resume_file.exists(), "initial resume snapshot missing");
+    let bytes = std::fs::read(&resume_file).unwrap();
     assert!(
-        contains(&std::fs::read(&resume_file).unwrap(), b"8:rbt-data"),
+        contains(&bytes, b"8:rbt-data"),
         "initial resume snapshot lacks the client-data key"
+    );
+    assert!(
+        contains(&bytes, uuid.as_bytes()),
+        "initial resume snapshot lacks the uuid"
     );
 
     // --- transfer ----------------------------------------------------------
@@ -198,8 +207,15 @@ async fn transfer_persist_restore() {
         .await
         .unwrap();
     assert_eq!(leech2.registry().len(), 1, "torrent was not restored");
-    let restored = leech2.registry().find(&info_hash).expect("restored entry");
-    assert_eq!(restored.info_hash.v1(), info_hash.v1());
+    // The uuid is the durable identity: same key finds it after restart.
+    let restored = leech2.registry().find(&uuid).expect("restored entry");
+    assert_eq!(
+        leech2
+            .with_handle(&restored, |h| h.info_hashes())
+            .unwrap()
+            .v1(),
+        v1
+    );
     assert_eq!(
         leech2.settings().unwrap().get_upload_rate_limit(),
         Some(123_456),
@@ -226,15 +242,14 @@ async fn transfer_persist_restore() {
     assert_eq!(b, content[40960..]);
 
     // --- remove ------------------------------------------------------------
-    leech2.remove_torrent(&info_hash, false).await.unwrap();
+    leech2.remove_torrent(&uuid, false).await.unwrap();
     assert_eq!(leech2.registry().len(), 0);
     wait_until(|| !resume_file.exists()).await;
     // Files stay on disk without delete_files.
     assert!(leech_data.path().join("fixture/a.bin").exists());
 
     // Removing an unknown torrent reports NotFound.
-    let missing = parse_info_hash("00000000000000000000000000000000000000ff").unwrap();
-    assert!(leech2.remove_torrent(&missing, false).await.is_err());
+    assert!(leech2.remove_torrent(&Uuid::new_v4(), false).await.is_err());
 
     leech2.shutdown().await;
     seed.shutdown().await;
@@ -341,13 +356,13 @@ async fn apply_settings_surfaces_failed_persistence() {
     engine.shutdown().await;
 }
 
-/// A resume file whose stem does not match the canonical key of its
-/// contents (e.g. persisted while a hybrid torrent was known only by its
-/// v2 hash) must be renamed at restore time — otherwise removal would
-/// delete only the canonical file and the stale one would resurrect the
-/// torrent on the next restart.
+/// A legacy resume file (pre-uuid: hash stem, no rbt-data key) is
+/// migrated at restore time: a uuid is minted, spliced into the record,
+/// and the file is renamed to the uuid stem — durably, so the identity
+/// survives every later restart. Removal then leaves no stale file to
+/// resurrect the torrent.
 #[tokio::test(flavor = "multi_thread")]
-async fn restore_canonicalizes_resume_key() {
+async fn restore_migrates_legacy_resume_files() {
     let state = tempfile::tempdir().unwrap();
     let data = tempfile::tempdir().unwrap();
 
@@ -356,15 +371,15 @@ async fn restore_canonicalizes_resume_key() {
     atp.set_save_path(data.path().to_str().unwrap());
     // The fixture embeds example.com trackers and a web seed the
     // restored torrent would try to contact; drop them (the test is
-    // about resume-key canonicalization, not endpoints).
+    // about migration, not endpoints).
     atp.clear_trackers();
     atp.clear_url_seeds();
-    let info_hash = atp.info_hashes();
-    let v1 = info_hash.v1().expect("hybrid fixture has a v1 hash");
-    let v2 = info_hash.v2().expect("hybrid fixture has a v2 hash");
+    let v2 = atp
+        .info_hashes()
+        .v2()
+        .expect("hybrid fixture has a v2 hash");
 
-    // Persist the resume data under the non-canonical (v2) stem, as a
-    // v2-magnet-then-metadata sequence would have.
+    // A pre-uuid record: hash stem, no client data.
     let torrents_dir = state.path().join("torrents");
     std::fs::create_dir_all(&torrents_dir).unwrap();
     let bytes = rbtorrent::Session::write_resume_data(&atp).unwrap();
@@ -375,34 +390,56 @@ async fn restore_canonicalizes_resume_key() {
         .await
         .unwrap();
     assert_eq!(engine.registry().len(), 1, "torrent was not restored");
+    let uuid = engine.registry().list()[0].uuid;
 
-    let canonical = torrents_dir.join(format!("{v1}.resume"));
-    assert!(canonical.exists(), "resume file was not canonicalized");
+    let canonical = torrents_dir.join(format!("{uuid}.resume"));
     assert!(
-        !stale.exists(),
-        "stale non-canonical resume file left behind"
+        canonical.exists(),
+        "resume file was not renamed to the uuid"
     );
-
-    // Removal therefore leaves no resume file to resurrect the torrent.
-    engine.remove_torrent(&info_hash, false).await.unwrap();
-    wait_until(|| !canonical.exists()).await;
+    assert!(!stale.exists(), "stale legacy resume file left behind");
+    let migrated = std::fs::read(&canonical).unwrap();
+    assert!(
+        contains(&migrated, b"8:rbt-data"),
+        "migration did not splice the client-data key"
+    );
+    assert!(
+        contains(&migrated, uuid.as_bytes()),
+        "migrated record does not carry the minted uuid"
+    );
     engine.shutdown().await;
 
+    // The minted identity is durable: a second restart reads it back.
     let engine2 = Engine::start(&test_config(state.path()), Some(hermetic_settings()))
         .await
         .unwrap();
+    assert_eq!(engine2.registry().len(), 1);
+    assert!(
+        engine2.registry().find(&uuid).is_some(),
+        "uuid changed across a restart"
+    );
+    assert!(canonical.exists());
+
+    // Removal therefore leaves no resume file to resurrect the torrent.
+    engine2.remove_torrent(&uuid, false).await.unwrap();
+    wait_until(|| !canonical.exists()).await;
+    engine2.shutdown().await;
+
+    let engine3 = Engine::start(&test_config(state.path()), Some(hermetic_settings()))
+        .await
+        .unwrap();
     assert_eq!(
-        engine2.registry().len(),
+        engine3.registry().len(),
         0,
         "removed torrent was resurrected by a stale resume file"
     );
-    engine2.shutdown().await;
+    engine3.shutdown().await;
 }
 
-/// A restore round-trip must leave resume records byte-identical: the
-/// add alert's params are libtorrent's selected-field snapshot, and
-/// rewriting a full record from them discards trackers, web seeds,
-/// limits and piece state.
+/// A restore round-trip must leave uuid-bearing resume records
+/// byte-identical: the add alert's params are libtorrent's
+/// selected-field snapshot, and rewriting a full record from them
+/// discards trackers, web seeds, limits and piece state.
 #[tokio::test(flavor = "multi_thread")]
 async fn restore_leaves_resume_files_untouched() {
     let state = tempfile::tempdir().unwrap();
@@ -413,12 +450,12 @@ async fn restore_leaves_resume_files_untouched() {
     atp.set_save_path(data.path().to_str().unwrap());
     atp.add_tracker("http://127.0.0.1:9/announce", 0);
     atp.add_url_seed("http://127.0.0.1:9/seed");
-    let v1 = atp.info_hashes().v1().expect("transfer fixture is v1");
 
+    let rsbt_data = rsbtd::engine::client_data::RsbtData::new();
     let torrents_dir = state.path().join("torrents");
     std::fs::create_dir_all(&torrents_dir).unwrap();
-    let bytes = rbtorrent::Session::write_resume_data(&atp).unwrap();
-    let file = torrents_dir.join(format!("{v1}.resume"));
+    let bytes = rbtorrent::Session::write_resume_data_with(&atp, &rsbt_data).unwrap();
+    let file = torrents_dir.join(format!("{}.resume", rsbt_data.uuid));
     std::fs::write(&file, &bytes).unwrap();
 
     // Engine::start awaits every restore add, so the pump has processed
@@ -427,6 +464,11 @@ async fn restore_leaves_resume_files_untouched() {
         .await
         .unwrap();
     assert_eq!(engine.registry().len(), 1, "torrent was not restored");
+    assert_eq!(
+        engine.registry().list()[0].uuid,
+        rsbt_data.uuid,
+        "restore did not adopt the persisted uuid"
+    );
     assert_eq!(
         std::fs::read(&file).unwrap(),
         bytes,
@@ -447,13 +489,14 @@ async fn failed_initial_persist_unwinds_the_add() {
         .unwrap();
     let mut atp = AddTorrentParams::from_torrent_file(fixture_path()).unwrap();
     atp.set_save_path(data.path().to_str().unwrap());
-    let v1 = atp.info_hashes().v1().expect("transfer fixture is v1");
 
-    // Occupy the record's path with a non-empty directory: the atomic
-    // rename then fails regardless of privileges (unlike a chmod, which
-    // root bypasses).
-    let target = state.path().join("torrents").join(format!("{v1}.resume"));
-    std::fs::create_dir_all(target.join("obstruction")).unwrap();
+    // The record's filename is a uuid minted inside the add, so it cannot
+    // be pre-obstructed; replace the whole torrents directory with a
+    // regular file instead — every resume write then fails regardless of
+    // privileges (unlike a chmod, which root bypasses).
+    let torrents_dir = state.path().join("torrents");
+    std::fs::remove_dir_all(&torrents_dir).unwrap();
+    std::fs::write(&torrents_dir, b"obstruction").unwrap();
 
     let mut rx = engine.subscribe_events();
     let err = engine.add_torrent(&mut atp).await.unwrap_err();
@@ -467,14 +510,13 @@ async fn failed_initial_persist_unwinds_the_add() {
     // The session drops the torrent too: once its removal is processed,
     // the same torrent can be added again.
     wait_for_event(&mut rx, |e| matches!(e.kind, EventKind::TorrentRemoved)).await;
-    std::fs::remove_dir_all(&target).unwrap();
+    std::fs::remove_file(&torrents_dir).unwrap();
+    std::fs::create_dir_all(&torrents_dir).unwrap();
     let entry = engine.add_torrent(&mut atp).await.unwrap();
     assert_eq!(engine.registry().len(), 1);
     assert!(
-        state
-            .path()
-            .join("torrents")
-            .join(format!("{}.resume", entry.resume_key))
+        torrents_dir
+            .join(format!("{}.resume", entry.uuid))
             .is_file()
     );
     engine.shutdown().await;
@@ -516,7 +558,7 @@ async fn metadata_less_move_is_persisted() {
     let resume = state
         .path()
         .join("torrents")
-        .join(format!("{}.resume", entry.resume_key));
+        .join(format!("{}.resume", entry.uuid));
     let (restored, _) =
         rbtorrent::Session::read_resume_data(&std::fs::read(&resume).unwrap(), None).unwrap();
     assert_eq!(

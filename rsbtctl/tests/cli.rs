@@ -27,6 +27,40 @@ fn help_lists_subcommands() {
 }
 
 #[test]
+fn status_takes_a_uuid_or_one_hash() {
+    let help = ctl().args(["status", "--help"]).output().unwrap();
+    assert!(help.status.success());
+    let stdout = String::from_utf8_lossy(&help.stdout);
+    for flag in ["--hash-v1", "--hash-v2"] {
+        assert!(stdout.contains(flag), "status --help is missing {flag}");
+    }
+
+    // The three keys are mutually exclusive, and one is required.
+    for args in [
+        vec!["status"],
+        vec!["status", "--hash-v1", "ab", "--hash-v2", "cd"],
+        vec![
+            "status",
+            "0f1e2d3c-0000-0000-0000-000000000000",
+            "--hash-v1",
+            "ab",
+        ],
+    ] {
+        let output = ctl()
+            .args(["--url", "http://127.0.0.1:1"])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "accepted {args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("cannot be used with") || stderr.contains("required arguments"),
+            "unexpected stderr for {args:?}: {stderr}"
+        );
+    }
+}
+
+#[test]
 fn requires_a_target() {
     let output = ctl()
         // On Windows an installed rsbtd's registry config would provide

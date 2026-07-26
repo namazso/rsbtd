@@ -7,7 +7,7 @@
 import { create } from 'zustand';
 
 /**
- * Row selection for the torrent list (canonical hashes). Range selection
+ * Row selection for the torrent list (torrent uuids). Range selection
  * resolves against the *current view order* passed by the caller.
  */
 export interface ClickModifiers {
@@ -20,15 +20,14 @@ interface SelectionState {
   anchor: string | null;
   focus: string | null;
 
-  click: (hash: string, mods: ClickModifiers, order: readonly string[]) => void;
+  click: (uuid: string, mods: ClickModifiers, order: readonly string[]) => void;
   /** Right-click: keep an existing multi-selection, else select the row. */
-  contextSelect: (hash: string) => void;
-  keyMove: (hash: string, extend: boolean, order: readonly string[]) => void;
-  toggle: (hash: string) => void;
+  contextSelect: (uuid: string) => void;
+  keyMove: (uuid: string, extend: boolean, order: readonly string[]) => void;
+  toggle: (uuid: string) => void;
   selectAll: (order: readonly string[]) => void;
   clear: () => void;
-  discard: (hashes: readonly string[]) => void;
-  migrate: (oldHash: string, newHash: string) => void;
+  discard: (uuids: readonly string[]) => void;
 }
 
 export const useSelection = create<SelectionState>((set, get) => ({
@@ -36,75 +35,63 @@ export const useSelection = create<SelectionState>((set, get) => ({
   anchor: null,
   focus: null,
 
-  click: (hash, mods, order) => {
+  click: (uuid, mods, order) => {
     const { selected, anchor } = get();
     if (mods.shift && anchor !== null) {
       const from = order.indexOf(anchor);
-      const to = order.indexOf(hash);
+      const to = order.indexOf(uuid);
       if (from !== -1 && to !== -1) {
         const [lo, hi] = from <= to ? [from, to] : [to, from];
         const range = order.slice(lo, hi + 1);
         const next = mods.ctrl ? new Set(selected) : new Set<string>();
-        for (const h of range) next.add(h);
-        set({ selected: next, focus: hash });
+        for (const u of range) next.add(u);
+        set({ selected: next, focus: uuid });
         return;
       }
     }
     if (mods.ctrl) {
       const next = new Set(selected);
-      if (next.has(hash)) next.delete(hash);
-      else next.add(hash);
-      set({ selected: next, anchor: hash, focus: hash });
+      if (next.has(uuid)) next.delete(uuid);
+      else next.add(uuid);
+      set({ selected: next, anchor: uuid, focus: uuid });
       return;
     }
-    set({ selected: new Set([hash]), anchor: hash, focus: hash });
+    set({ selected: new Set([uuid]), anchor: uuid, focus: uuid });
   },
 
-  contextSelect: (hash) => {
+  contextSelect: (uuid) => {
     const { selected } = get();
-    if (!selected.has(hash)) set({ selected: new Set([hash]), anchor: hash, focus: hash });
+    if (!selected.has(uuid)) set({ selected: new Set([uuid]), anchor: uuid, focus: uuid });
   },
 
-  keyMove: (hash, extend, order) => {
+  keyMove: (uuid, extend, order) => {
     if (extend) {
-      get().click(hash, { ctrl: false, shift: true }, order);
+      get().click(uuid, { ctrl: false, shift: true }, order);
     } else {
-      set({ selected: new Set([hash]), anchor: hash, focus: hash });
+      set({ selected: new Set([uuid]), anchor: uuid, focus: uuid });
     }
   },
 
-  toggle: (hash) => {
+  toggle: (uuid) => {
     const next = new Set(get().selected);
-    if (next.has(hash)) next.delete(hash);
-    else next.add(hash);
-    set({ selected: next, anchor: hash, focus: hash });
+    if (next.has(uuid)) next.delete(uuid);
+    else next.add(uuid);
+    set({ selected: next, anchor: uuid, focus: uuid });
   },
 
   selectAll: (order) => set({ selected: new Set(order) }),
 
   clear: () => set({ selected: new Set(), anchor: null, focus: null }),
 
-  discard: (hashes) => {
+  discard: (uuids) => {
     const { selected, anchor, focus } = get();
-    const gone = new Set(hashes);
-    if (![...gone].some((h) => selected.has(h) || h === anchor || h === focus)) return;
-    const next = new Set([...selected].filter((h) => !gone.has(h)));
+    const gone = new Set(uuids);
+    if (![...gone].some((u) => selected.has(u) || u === anchor || u === focus)) return;
+    const next = new Set([...selected].filter((u) => !gone.has(u)));
     set({
       selected: next,
       anchor: anchor !== null && gone.has(anchor) ? null : anchor,
       focus: focus !== null && gone.has(focus) ? null : focus,
-    });
-  },
-
-  migrate: (oldHash, newHash) => {
-    const { selected, anchor, focus } = get();
-    if (!selected.has(oldHash) && anchor !== oldHash && focus !== oldHash) return;
-    const next = new Set(selected);
-    if (next.delete(oldHash)) next.add(newHash);
-    set({
-      selected: next,
-      anchor: anchor === oldHash ? newHash : anchor,
-      focus: focus === oldHash ? newHash : focus,
     });
   },
 }));

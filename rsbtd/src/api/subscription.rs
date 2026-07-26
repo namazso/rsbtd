@@ -17,22 +17,15 @@ use async_graphql::futures_util::Stream;
 use async_graphql::futures_util::stream::unfold;
 use async_graphql::{Context, Subscription};
 use tokio::sync::broadcast::error::RecvError;
+use uuid::Uuid;
 
 use super::events::TorrentEvent;
 use super::query::stat_values;
-use super::scalars::InfoHash;
 use super::types::{CreateJob, StatValue, Torrent};
 use crate::engine::events::EventKind;
 use crate::engine::{Engine, EngineError};
 
 pub struct SubscriptionRoot;
-
-/// Whether `entry_hash` refers to the same torrent as `filter` (either
-/// hash version may match).
-fn hash_matches(entry_hash: &rbtorrent::InfoHash, filter: &rbtorrent::InfoHash) -> bool {
-    (filter.v1().is_some() && entry_hash.v1() == filter.v1())
-        || (filter.v2().is_some() && entry_hash.v2() == filter.v2())
-}
 
 /// Live event streams (served over graphql-ws). Streams have no replay
 /// or resume: after a reconnect, re-query current state. All streams
@@ -50,10 +43,10 @@ impl SubscriptionRoot {
     async fn torrent_events(
         &self,
         ctx: &Context<'_>,
-        info_hash: Option<InfoHash>,
+        uuid: Option<Uuid>,
     ) -> async_graphql::Result<impl Stream<Item = TorrentEvent>> {
         let engine = Arc::clone(ctx.data::<Arc<Engine>>()?);
-        let filter = info_hash.map(|h| h.0);
+        let filter = uuid;
 
         if let Some(f) = &filter
             && engine.registry().find(f).is_none()
@@ -71,15 +64,12 @@ impl SubscriptionRoot {
                 loop {
                     match rx.recv().await {
                         Ok(event) => {
-                            if let Some(f) = &filter {
-                                if let Some(t) = event.torrent {
-                                    if !hash_matches(&t.info_hash, f) {
-                                        continue;
-                                    }
-                                } else {
-                                    // Skip session-level events when filtering by torrent
-                                    continue;
-                                }
+                            // Session-level events (no torrent) are skipped
+                            // when filtering by torrent.
+                            if let Some(f) = &filter
+                                && event.torrent != Some(*f)
+                            {
+                                continue;
                             }
 
                             if let Some(gql_event) =
@@ -111,10 +101,10 @@ impl SubscriptionRoot {
     async fn torrent_changed(
         &self,
         ctx: &Context<'_>,
-        info_hash: Option<InfoHash>,
+        uuid: Option<Uuid>,
     ) -> async_graphql::Result<impl Stream<Item = Vec<Torrent>>> {
         let engine = Arc::clone(ctx.data::<Arc<Engine>>()?);
-        let filter = info_hash.map(|h| h.0);
+        let filter = uuid;
         if let Some(f) = &filter
             && engine.registry().find(f).is_none()
         {
@@ -137,7 +127,7 @@ impl SubscriptionRoot {
                                 .filter_map(|status| {
                                     let entry = engine.registry().get(status.id())?;
                                     if let Some(f) = &filter
-                                        && !hash_matches(&entry.info_hash, f)
+                                        && entry.uuid != *f
                                     {
                                         return None;
                                     }
@@ -164,7 +154,7 @@ impl SubscriptionRoot {
                                 .into_iter()
                                 .filter_map(|entry| {
                                     if let Some(f) = &filter
-                                        && !hash_matches(&entry.info_hash, f)
+                                        && entry.uuid != *f
                                     {
                                         return None;
                                     }

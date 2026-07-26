@@ -68,27 +68,27 @@ enum Command {
         state: Option<String>,
     },
     /// Detailed status of one torrent.
-    Status { info_hash: String },
+    Status(StatusArgs),
     /// Add a torrent from a magnet link or a .torrent file.
     Add(AddArgs),
     /// Remove a torrent.
     Remove {
-        info_hash: String,
+        uuid: String,
         /// Also delete the downloaded files.
         #[arg(long)]
         delete_files: bool,
     },
     /// Pause a torrent (detaches it from auto-management).
-    Pause { info_hash: String },
+    Pause { uuid: String },
     /// Resume a paused torrent.
-    Resume { info_hash: String },
+    Resume { uuid: String },
     /// Pause the whole session.
     SessionPause,
     /// Resume the whole session.
     SessionResume,
     /// Wait until a torrent reaches a condition.
     Wait {
-        info_hash: String,
+        uuid: String,
         /// metadata, finished, or seeding.
         #[arg(long)]
         until: WaitUntil,
@@ -108,6 +108,22 @@ enum Command {
     },
     /// Create a .torrent from a local file or directory.
     Create(CreateArgs),
+}
+
+#[derive(Args)]
+struct StatusArgs {
+    /// Torrent uuid.
+    #[arg(
+        required_unless_present_any = ["hash_v1", "hash_v2"],
+        conflicts_with_all = ["hash_v1", "hash_v2"],
+    )]
+    uuid: Option<String>,
+    /// Look the torrent up by its v1 (SHA-1) info-hash: 40 hex characters.
+    #[arg(long, conflicts_with = "hash_v2")]
+    hash_v1: Option<String>,
+    /// Look the torrent up by its v2 (SHA-256) info-hash: 64 hex characters.
+    #[arg(long)]
+    hash_v2: Option<String>,
 }
 
 #[derive(Args)]
@@ -272,7 +288,7 @@ async fn run(cli: Cli) -> Result<(), String> {
             let state = state.map(|s| s.to_uppercase());
             let data = gql(
                 "query($state: TorrentState) { torrents(state: $state) { \
-                   infoHash name state progressPpm downloadRate uploadRate totalDone totalSize } }",
+                   uuid name state progressPpm downloadRate uploadRate totalDone totalSize } }",
                 json!({ "state": state }),
             )
             .await?;
@@ -286,7 +302,7 @@ async fn run(cli: Cli) -> Result<(), String> {
                     .map(|t| {
                         format!(
                             "{}  {:<20} {:>6.1}%  {}",
-                            field_str(&t["infoHash"]),
+                            field_str(&t["uuid"]),
                             field_str(&t["state"]),
                             t["progressPpm"].as_f64().unwrap_or(0.0) / 10_000.0,
                             field_str(&t["name"]),
@@ -296,17 +312,41 @@ async fn run(cli: Cli) -> Result<(), String> {
                     .join("\n")
             });
         }
-        Command::Status { info_hash } => {
-            let data = gql(
-                "query($h: InfoHash!) { torrent(infoHash: $h) { \
-                   name state progressPpm savePath totalSize totalDone \
-                   downloadRate uploadRate numPeers numSeeds isPaused isFinished \
-                   isSeeding hasMetadata magnetUri flags error { message } } }",
-                json!({ "h": info_hash }),
-            )
-            .await?;
+        Command::Status(args) => {
+            const FIELDS: &str = "name state progressPpm savePath totalSize totalDone \
+                 downloadRate uploadRate numPeers numSeeds isPaused isFinished \
+                 isSeeding hasMetadata magnetUri flags error { message }";
+            // The hash lookups are aliased back to `torrent`, so the
+            // response shape is the same whichever key was given.
+            let (query, variables, ident) = match (args.uuid, args.hash_v1, args.hash_v2) {
+                (Some(uuid), ..) => (
+                    format!("query($k: UUID!) {{ torrent(uuid: $k) {{ {FIELDS} }} }}"),
+                    json!({ "k": uuid }),
+                    uuid,
+                ),
+                (_, Some(hash), _) => (
+                    format!(
+                        "query($k: Sha1Sum!) {{ torrent: torrentByHashV1(hash: $k) {{ {FIELDS} }} }}"
+                    ),
+                    json!({ "k": hash }),
+                    hash,
+                ),
+                (_, _, Some(hash)) => (
+                    format!(
+                        "query($k: Sha256Sum!) {{ torrent: torrentByHashV2(hash: $k) {{ {FIELDS} }} }}"
+                    ),
+                    json!({ "k": hash }),
+                    hash,
+                ),
+                // clap requires the uuid unless a hash flag is present.
+                (None, None, None) => unreachable!("status takes a uuid or a hash"),
+            };
+            let data = client
+                .graphql(&query, variables)
+                .await
+                .map_err(|e| e.to_string())?;
             if data["torrent"].is_null() {
-                return Err(format!("torrent {info_hash} not found"));
+                return Err(format!("torrent {ident} not found"));
             }
             print(&data, &|d| {
                 let t = &d["torrent"];
@@ -353,41 +393,38 @@ async fn run(cli: Cli) -> Result<(), String> {
                 input["flags"] = json!(["SEED_MODE"]);
             }
             let data = gql(
-                "mutation($input: AddTorrentInput!) { addTorrent(input: $input) { infoHash name } }",
+                "mutation($input: AddTorrentInput!) { addTorrent(input: $input) { uuid name } }",
                 json!({ "input": input }),
             )
             .await?;
             print(&data, &|d| {
                 format!(
                     "added {} ({})",
-                    field_str(&d["addTorrent"]["infoHash"]),
+                    field_str(&d["addTorrent"]["uuid"]),
                     field_str(&d["addTorrent"]["name"])
                 )
             });
         }
-        Command::Remove {
-            info_hash,
-            delete_files,
-        } => {
+        Command::Remove { uuid, delete_files } => {
             let data = gql(
-                "mutation($h: InfoHash!, $d: Boolean!) { removeTorrent(infoHash: $h, deleteFiles: $d) }",
-                json!({ "h": info_hash, "d": delete_files }),
+                "mutation($u: UUID!, $d: Boolean!) { removeTorrent(uuid: $u, deleteFiles: $d) }",
+                json!({ "u": uuid, "d": delete_files }),
             )
             .await?;
             print(&data, &|_| "removed".to_owned());
         }
-        Command::Pause { info_hash } => {
+        Command::Pause { uuid } => {
             let data = gql(
-                "mutation($h: InfoHash!) { pauseTorrent(infoHash: $h) }",
-                json!({ "h": info_hash }),
+                "mutation($u: UUID!) { pauseTorrent(uuid: $u) }",
+                json!({ "u": uuid }),
             )
             .await?;
             print(&data, &|_| "paused".to_owned());
         }
-        Command::Resume { info_hash } => {
+        Command::Resume { uuid } => {
             let data = gql(
-                "mutation($h: InfoHash!) { resumeTorrent(infoHash: $h) }",
-                json!({ "h": info_hash }),
+                "mutation($u: UUID!) { resumeTorrent(uuid: $u) }",
+                json!({ "u": uuid }),
             )
             .await?;
             print(&data, &|_| "resumed".to_owned());
@@ -401,20 +438,20 @@ async fn run(cli: Cli) -> Result<(), String> {
             print(&data, &|_| "session resumed".to_owned());
         }
         Command::Wait {
-            info_hash,
+            uuid,
             until,
             timeout,
         } => {
             let deadline = Instant::now() + Duration::from_secs(timeout);
             loop {
                 let data = gql(
-                    "query($h: InfoHash!) { torrent(infoHash: $h) { hasMetadata isFinished isSeeding } }",
-                    json!({ "h": info_hash }),
+                    "query($u: UUID!) { torrent(uuid: $u) { hasMetadata isFinished isSeeding } }",
+                    json!({ "u": uuid }),
                 )
                 .await?;
                 let t = &data["torrent"];
                 if t.is_null() {
-                    return Err(format!("torrent {info_hash} not found"));
+                    return Err(format!("torrent {uuid} not found"));
                 }
                 let done = match until {
                     WaitUntil::Metadata => t["hasMetadata"] == true,

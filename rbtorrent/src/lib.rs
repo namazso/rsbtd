@@ -83,8 +83,8 @@
 //! 2. **Alert views borrow the batch** and are valid only until the next
 //!    pop; copy out whatever must outlive it. Alert-derived
 //!    [`TorrentHandle`]s are batch-scoped too (cloning does not extend
-//!    that); keep the torrent's id or info-hashes instead and re-derive a
-//!    handle with [`Session::find_torrent`].
+//!    that); keep the torrent's client-data token instead and re-derive a
+//!    handle with [`Session::find_torrent_by_token`].
 //!
 //! # Blocking
 //!

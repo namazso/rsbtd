@@ -182,8 +182,9 @@ impl<'a> RawAlert<'a> {
     /// otherwise); it may already be invalid if the torrent was removed.
     ///
     /// Batch-scoped: it cannot outlive this batch (clone does not extend
-    /// that). To keep control past the batch, keep the id/info-hashes and
-    /// re-derive via [`Session::find_torrent`](crate::Session::find_torrent).
+    /// that). To keep control past the batch, keep the client-data token
+    /// and re-derive via
+    /// [`Session::find_torrent_by_token`](crate::Session::find_torrent_by_token).
     pub fn torrent_handle(&self) -> Option<crate::handle::TorrentHandle<'a>> {
         // SAFETY: alert valid for 'a; the handle is cloned to own, and the
         // alert was posted by `self.session`, so the pairing is correct.
@@ -422,6 +423,11 @@ alert_view!(
 impl TorrentRemovedAlert<'_> {
     pub fn info_hashes(&self) -> InfoHash {
         InfoHash::from_ct(self.view.info_hashes)
+    }
+
+    /// The removed torrent's client-data token (0 when none was attached).
+    pub fn client_data_token(&self) -> u64 {
+        self.view.userdata as u64
     }
 }
 

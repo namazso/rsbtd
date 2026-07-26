@@ -80,6 +80,25 @@ lt::session_proxy* proxy_ptr(ct_session_proxy* p)
 	return std::launder(reinterpret_cast<lt::session_proxy*>(p->data_));
 }
 
+// Shared body of the ct_session_find_torrent_* pair: *hash* is one of the
+// ct_sha1/ct_sha256 PODs, and Hash the lt hash type it is layout-compatible
+// with (asserted in abi_asserts.cpp).
+template <typename Hash, typename CtHash>
+bool find_torrent_impl(ct_session const* session, CtHash const* hash,
+	ct_torrent_handle* out)
+{
+	if (!session || !hash || !out) return false;
+	try {
+		lt::torrent_handle th = unwrap(session)->find_torrent(
+			Hash(reinterpret_cast<char const*>(hash->data)));
+		if (!th.is_valid()) return false;
+		new (out->data_) lt::torrent_handle(std::move(th));
+		return true;
+	} catch (...) {
+		return false;
+	}
+}
+
 static_assert(CT_SAVE_SETTINGS
 	== static_cast<uint32_t>(lt::session_handle::save_settings));
 static_assert(CT_SAVE_DHT_STATE
@@ -499,27 +518,16 @@ void ct_session_remove_torrent(ct_session* session,
 	}
 }
 
-bool ct_session_find_torrent(const ct_session* session,
-	const ct_info_hash* hash, ct_torrent_handle* out)
+bool ct_session_find_torrent_v1(const ct_session* session,
+	const ct_sha1* hash, ct_torrent_handle* out)
 {
-	if (!session || !hash || !out) return false;
-	try {
-		static constexpr uint8_t zeros[32] = {};
-		lt::torrent_handle th;
-		if (std::memcmp(hash->v1.data, zeros, 20) != 0) {
-			th = unwrap(session)->find_torrent(
-				lt::sha1_hash(reinterpret_cast<const char*>(hash->v1.data)));
-		}
-		if (!th.is_valid() && std::memcmp(hash->v2.data, zeros, 32) != 0) {
-			th = unwrap(session)->find_torrent(
-				lt::sha256_hash(reinterpret_cast<const char*>(hash->v2.data)));
-		}
-		if (!th.is_valid()) return false;
-		new (out->data_) lt::torrent_handle(std::move(th));
-		return true;
-	} catch (...) {
-		return false;
-	}
+	return find_torrent_impl<lt::sha1_hash>(session, hash, out);
+}
+
+bool ct_session_find_torrent_v2(const ct_session* session,
+	const ct_sha256* hash, ct_torrent_handle* out)
+{
+	return find_torrent_impl<lt::sha256_hash>(session, hash, out);
 }
 
 ct_buf ct_write_resume_data_buf(const ct_add_torrent_params* atp,

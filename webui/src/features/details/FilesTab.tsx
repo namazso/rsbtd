@@ -66,10 +66,10 @@ function PrioritySelect({
   );
 }
 
-export function FilesTab({ hash, visible }: { hash: string; visible: boolean }) {
+export function FilesTab({ uuid, visible }: { uuid: string; visible: boolean }) {
   const { t } = useTranslation(['details', 'common']);
   const isMobile = useIsMobile();
-  const query = useFiles(hash, visible);
+  const query = useFiles(uuid, visible);
   const files = query.data?.data?.torrent?.files ?? null;
   const [showPad, setShowPad] = useState(false);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
@@ -126,7 +126,7 @@ export function FilesTab({ hash, visible }: { hash: string; visible: boolean }) 
     // still-pending edit, so concurrent edits merge instead of racing.
     submitChain.current = submitChain.current
       .then(() =>
-        mutations.setFilePriorities(hash, buildPriorityList(filesRef.current ?? [], pending)),
+        mutations.setFilePriorities(uuid, buildPriorityList(filesRef.current ?? [], pending)),
       )
       .then(() => query.refetch())
       .catch((err: unknown) => {
@@ -182,7 +182,7 @@ export function FilesTab({ hash, visible }: { hash: string; visible: boolean }) 
       </div>
 
       <RenameDialog
-        hash={hash}
+        uuid={uuid}
         target={renameTarget}
         onClose={() => setRenameTarget(null)}
         onRenamed={() => void query.refetch()}
@@ -267,12 +267,12 @@ function FileRow({
 }
 
 function RenameDialog({
-  hash,
+  uuid,
   target,
   onClose,
   onRenamed,
 }: {
-  hash: string;
+  uuid: string;
   target: TorrentFile | null;
   onClose: () => void;
   onRenamed: () => void;
@@ -294,7 +294,7 @@ function RenameDialog({
     setBusy(true);
     try {
       // Waits server-side for the rename confirmation.
-      const result = await mutations.renameFile(hash, target.index, name.trim());
+      const result = await mutations.renameFile(uuid, target.index, name.trim());
       toast.success(t('files.renameDone', { name: result.renameFile }));
       onRenamed();
       onClose();

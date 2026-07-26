@@ -87,9 +87,9 @@ export function TorrentTable({ view }: { view: TorrentsView }) {
   );
 
   const selectedRows = useMemo(() => {
-    const map = useTorrents.getState().byHash;
-    return [...selected].flatMap((h) => {
-      const row = map.get(h);
+    const map = useTorrents.getState().byUuid;
+    return [...selected].flatMap((u) => {
+      const row = map.get(u);
       return row !== undefined ? [row] : [];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- listVersion tracks store content
@@ -104,7 +104,7 @@ export function TorrentTable({ view }: { view: TorrentsView }) {
       columns={columns}
       defaultVisible={DEFAULT_VISIBLE}
       data={view.rows}
-      rowKey={(r) => r.infoHash}
+      rowKey={(r) => r.uuid}
       sort={{ key: layout?.sortKey ?? null, desc: layout?.sortDesc ?? false }}
       onSortChange={(s) =>
         setTableLayout('torrents', { sortKey: s.key ?? undefined, sortDesc: s.desc })
@@ -113,13 +113,13 @@ export function TorrentTable({ view }: { view: TorrentsView }) {
       focusKey={focus}
       onRowMouseDown={(row, e) => {
         if (e.button !== 0) return;
-        sel.click(row.infoHash, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, view.order);
+        sel.click(row.uuid, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, view.order);
       }}
-      onRowDoubleClick={(row) => ui.setDetailsHash(row.infoHash)}
-      onRowContextMenu={(row) => sel.contextSelect(row.infoHash)}
+      onRowDoubleClick={(row) => ui.setDetailsUuid(row.uuid)}
+      onRowContextMenu={(row) => sel.contextSelect(row.uuid)}
       rowContextContent={<TorrentActionItems kit={CONTEXT_MENU_KIT} rows={selectedRows} />}
-      onNavigate={(row, extend) => sel.keyMove(row.infoHash, extend, view.order)}
-      onActivate={(row) => ui.setDetailsHash(row.infoHash)}
+      onNavigate={(row, extend) => sel.keyMove(row.uuid, extend, view.order)}
+      onActivate={(row) => ui.setDetailsUuid(row.uuid)}
       emptyText={view.total === 0 ? t('empty.noTorrents') : t('empty.noMatch')}
     />
   );

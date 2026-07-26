@@ -17,8 +17,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::sync::{broadcast, mpsc};
+use uuid::Uuid;
 
-use super::events::{Event, EventKind, TorrentRef};
+use super::events::{Event, EventKind};
 use super::{DirtyResume, Inflight};
 
 /// Filename of the serialized session state within the state directory.
@@ -46,9 +47,8 @@ impl StatePaths {
         self.root.join(TORRENTS_DIR)
     }
 
-    pub fn resume_file(&self, resume_key: &str) -> PathBuf {
-        self.torrents_dir()
-            .join(format!("{resume_key}.{RESUME_EXT}"))
+    pub fn resume_file(&self, stem: &str) -> PathBuf {
+        self.torrents_dir().join(format!("{stem}.{RESUME_EXT}"))
     }
 
     /// Creates the state directory tree. New directories get owner-only
@@ -107,18 +107,17 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// One unit of work for the persister task.
 #[derive(Debug)]
 pub enum PersistOp {
-    /// Write a torrent's resume data; publishes `ResumeDataSaved`/`Failed`
-    /// and releases its in-flight token when done. `ack` (when present)
-    /// receives the durable write's result, for callers that promised
-    /// durability.
+    /// Write a torrent's resume data (to `<uuid>.resume`); publishes
+    /// `ResumeDataSaved`/`Failed` and releases its in-flight token when
+    /// done. `ack` (when present) receives the durable write's result,
+    /// for callers that promised durability.
     WriteResume {
-        resume_key: String,
-        torrent: TorrentRef,
+        uuid: Uuid,
         bytes: Vec<u8>,
         ack: Option<tokio::sync::oneshot::Sender<std::io::Result<()>>>,
     },
     /// Delete a torrent's resume file (missing file is not an error).
-    DeleteResume { resume_key: String },
+    DeleteResume { uuid: Uuid },
     /// Write the serialized session state. `ack` (when present) receives
     /// the durable write's result, for callers that promised durability.
     WriteSessionState {
@@ -138,13 +137,8 @@ pub async fn run_persister(
     while let Some(op) = rx.recv().await {
         let paths = paths.clone();
         match op {
-            PersistOp::WriteResume {
-                resume_key,
-                torrent,
-                bytes,
-                ack,
-            } => {
-                let path = paths.resume_file(&resume_key);
+            PersistOp::WriteResume { uuid, bytes, ack } => {
+                let path = paths.resume_file(&uuid.to_string());
                 let result =
                     match tokio::task::spawn_blocking(move || write_atomic(&path, &bytes)).await {
                         Ok(r) => r,
@@ -154,21 +148,21 @@ pub async fn run_persister(
                     };
                 let kind = match &result {
                     Ok(()) => {
-                        dirty.remove(torrent.id);
+                        dirty.remove(uuid);
                         EventKind::ResumeDataSaved
                     }
                     Err(e) => {
-                        tracing::warn!(%torrent.info_hash, "resume write failed: {e}");
+                        tracing::warn!(%uuid, "resume write failed: {e}");
                         // On-disk state now uncertain; the pump retries
                         // and shutdown flushes it.
-                        dirty.insert(torrent.id);
+                        dirty.insert(uuid);
                         EventKind::ResumeDataFailed {
                             message: format!("cannot write resume file: {e}"),
                         }
                     }
                 };
                 let _ = events.send(Arc::new(Event {
-                    torrent: Some(torrent),
+                    torrent: Some(uuid),
                     kind,
                 }));
                 inflight.dec();
@@ -176,13 +170,13 @@ pub async fn run_persister(
                     let _ = ack.send(result);
                 }
             }
-            PersistOp::DeleteResume { resume_key } => {
-                let path = paths.resume_file(&resume_key);
+            PersistOp::DeleteResume { uuid } => {
+                let path = paths.resume_file(&uuid.to_string());
                 let result = tokio::task::spawn_blocking(move || std::fs::remove_file(&path)).await;
                 if let Ok(Err(e)) = result
                     && e.kind() != std::io::ErrorKind::NotFound
                 {
-                    tracing::warn!(resume_key, "cannot delete resume file: {e}");
+                    tracing::warn!(%uuid, "cannot delete resume file: {e}");
                 }
             }
             PersistOp::WriteSessionState { bytes, ack } => {

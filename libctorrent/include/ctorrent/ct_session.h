@@ -149,15 +149,20 @@ void ct_session_remove_torrent(
   uint32_t flags
 );
 
-/* Looks a torrent up by info-hash; either hash form finds hybrid torrents
- * (v1 is tried first when both are set). On a hit, constructs an owned
- * handle into *out (release with ct_torrent_handle_drop) and returns true.
- * Returns false — leaving *out untouched — when no torrent matches, *hash*
- * is all-zero, or an argument is NULL. Briefly blocking (round-trips to the
- * network thread). */
-bool ct_session_find_torrent(
+/* Looks a torrent up by its v1 (SHA-1) or v2 (SHA-256) info-hash; a hybrid
+ * torrent is found by either hash form. On a hit, constructs an owned handle
+ * into *out (release with ct_torrent_handle_drop) and returns true. Returns
+ * false — leaving *out untouched — when no torrent matches or an argument is
+ * NULL. Briefly blocking (round-trips to the network thread). */
+bool ct_session_find_torrent_v1(
   const ct_session* session,
-  const ct_info_hash* hash,
+  const ct_sha1* hash,
+  struct ct_torrent_handle* out
+);
+
+bool ct_session_find_torrent_v2(
+  const ct_session* session,
+  const ct_sha256* hash,
   struct ct_torrent_handle* out
 );
 

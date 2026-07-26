@@ -8,7 +8,7 @@
 // session, which cannot move while a handle borrows it.
 
 async fn misuse(session: rbtorrent::Session) {
-    let handle = session.find_torrent(rbtorrent::InfoHash::new(None, None));
+    let handle = session.find_torrent_by_token(1);
     session.close().await;
     drop(handle);
 }

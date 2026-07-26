@@ -29,7 +29,7 @@ tokio = { version = "1", features = [
 axum = { version = "0.8", features = ["ws"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tower-http = { version = "0.6", features = ["cors", "fs", "limit"] }
-async-graphql = "7.2"
+async-graphql = { version = "7.2", features = ["uuid"] }
 async-graphql-axum = "7.2"
 serde = { version = "1", features = ["derive"] }
 serde_bencode = "0.2"
@@ -41,6 +41,7 @@ base64 = "0.22"
 hex = "0.4"
 subtle = "2"
 sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
 
 # The unix-y entry point (config file path via CLI).
 [target.'cfg(not(windows))'.dependencies]

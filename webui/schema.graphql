@@ -371,13 +371,9 @@ fetches per-file progress (a `Torrent.files` selection).
 """
 type FileProgressEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Downloaded bytes per file, indexed by file index.
 	"""
@@ -389,13 +385,9 @@ A file rename failed.
 """
 type FileRenameFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Zero-based index of the file that failed to rename.
 	"""
@@ -411,13 +403,9 @@ A file was renamed (the outcome of `renameFile`).
 """
 type FileRenamedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Zero-based index of the renamed file.
 	"""
@@ -551,13 +539,6 @@ input I2pTunnelInput {
 }
 
 """
-A torrent info-hash: 40 hex characters (v1/SHA-1) or 64 hex
-characters (v2/SHA-256). Input accepts either case and either hash
-of a hybrid torrent; output is lowercase and prefers v1.
-"""
-scalar InfoHash
-
-"""
 OS cache interaction for disk reads.
 """
 enum IoReadMode {
@@ -684,13 +665,9 @@ Magnet metadata acquisition failed.
 """
 type MetadataFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Failure description, when the engine supplied one.
 	"""
@@ -703,13 +680,9 @@ info-hash at this point.
 """
 type MetadataReceivedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -795,60 +768,60 @@ type MutationRoot {
 	success means the files are gone, and a failed deletion is
 	reported as an error (the torrent is still removed).
 	"""
-	removeTorrent(infoHash: InfoHash!, deleteFiles: Boolean! = false): Boolean!
+	removeTorrent(uuid: UUID!, deleteFiles: Boolean! = false): Boolean!
 	"""
 	Pauses a torrent. With `detach` (the default), also removes it
 	from auto-management so the queue does not resume it. With
 	`graceful`, outstanding downloaded blocks are waited for before
 	disconnecting peers.
 	"""
-	pauseTorrent(infoHash: InfoHash!, detach: Boolean! = true, graceful: Boolean! = false): Boolean!
+	pauseTorrent(uuid: UUID!, detach: Boolean! = true, graceful: Boolean! = false): Boolean!
 	"""
 	Resumes a paused torrent. Does not restore auto-management; set
 	the `AUTO_MANAGED` flag separately if wanted.
 	"""
-	resumeTorrent(infoHash: InfoHash!): Boolean!
+	resumeTorrent(uuid: UUID!): Boolean!
 	"""
 	Rechecks all downloaded data against the piece hashes.
 	"""
-	forceRecheck(infoHash: InfoHash!): Boolean!
+	forceRecheck(uuid: UUID!): Boolean!
 	"""
 	Schedules a tracker announce `seconds` from now (0 = immediately;
 	tracker minimum intervals are still honored). `trackerIndex` -1
 	means all trackers, otherwise it indexes the current `trackers`
 	list.
 	"""
-	forceReannounce(infoHash: InfoHash!, seconds: Int! = 0, trackerIndex: Int! = -1): Boolean!
+	forceReannounce(uuid: UUID!, seconds: Int! = 0, trackerIndex: Int! = -1): Boolean!
 	"""
 	Re-announces to the DHT.
 	"""
-	forceDhtAnnounce(infoHash: InfoHash!): Boolean!
+	forceDhtAnnounce(uuid: UUID!): Boolean!
 	"""
 	Clears a torrent's error state so it can be resumed.
 	"""
-	clearError(infoHash: InfoHash!): Boolean!
+	clearError(uuid: UUID!): Boolean!
 	"""
 	Flushes the disk cache for the torrent.
 	"""
-	flushCache(infoHash: InfoHash!): Boolean!
+	flushCache(uuid: UUID!): Boolean!
 	"""
 	Generates and persists resume data for the torrent now.
 	"""
-	saveResumeData(infoHash: InfoHash!): Boolean!
+	saveResumeData(uuid: UUID!): Boolean!
 	"""
 	Moves the torrent's storage, returning the new path once the move
 	completed (may take minutes across filesystems).
 	"""
-	moveStorage(infoHash: InfoHash!, path: String!, mode: MoveMode! = ALWAYS_REPLACE_FILES): String!
+	moveStorage(uuid: UUID!, path: String!, mode: MoveMode! = ALWAYS_REPLACE_FILES): String!
 	"""
 	Renames a file within the torrent, returning the accepted name.
 	"""
-	renameFile(infoHash: InfoHash!, index: Int!, name: String!): String!
+	renameFile(uuid: UUID!, index: Int!, name: String!): String!
 	"""
 	Sets one file's download priority (0 = skip, 1..=7). Errors
 	before metadata is available or for an out-of-range index.
 	"""
-	setFilePriority(infoHash: InfoHash!, index: Int!, priority: Int!): Boolean!
+	setFilePriority(uuid: UUID!, index: Int!, priority: Int!): Boolean!
 	"""
 	Sets download priorities for all files at once, in file-index
 	order. Send one value per file: files beyond the end of a
@@ -856,30 +829,30 @@ type MutationRoot {
 	always stay at 0. Errors before metadata is available or if the
 	list is longer than the number of files.
 	"""
-	setFilePriorities(infoHash: InfoHash!, priorities: [Int!]!): Boolean!
+	setFilePriorities(uuid: UUID!, priorities: [Int!]!): Boolean!
 	"""
 	Sets one piece's download priority (0 = skip, 1..=7).
 	"""
-	setPiecePriority(infoHash: InfoHash!, piece: Int!, priority: Int!): Boolean!
+	setPiecePriority(uuid: UUID!, piece: Int!, priority: Int!): Boolean!
 	"""
 	Sets download priorities for pieces, in piece-index order.
 	Pieces beyond the end of the list keep their current priority.
 	Errors before metadata is available or if the list is longer
 	than the number of pieces; a no-op while seeding.
 	"""
-	setPiecePriorities(infoHash: InfoHash!, priorities: [Int!]!): Boolean!
+	setPiecePriorities(uuid: UUID!, priorities: [Int!]!): Boolean!
 	"""
 	Requests a piece to be downloaded early (`deadlineMs` from now).
 	"""
-	setPieceDeadline(infoHash: InfoHash!, piece: Int!, deadlineMs: Int!): Boolean!
+	setPieceDeadline(uuid: UUID!, piece: Int!, deadlineMs: Int!): Boolean!
 	"""
 	Removes a piece's deadline.
 	"""
-	resetPieceDeadline(infoHash: InfoHash!, piece: Int!): Boolean!
+	resetPieceDeadline(uuid: UUID!, piece: Int!): Boolean!
 	"""
 	Removes all piece deadlines.
 	"""
-	clearPieceDeadlines(infoHash: InfoHash!): Boolean!
+	clearPieceDeadlines(uuid: UUID!): Boolean!
 	"""
 	Sets per-torrent limits; omitted arguments are left unchanged.
 	Rates are positive bytes/s; -1 removes the per-torrent limit
@@ -887,72 +860,72 @@ type MutationRoot {
 	2..=16777214. An invalid value rejects the whole mutation without
 	changing any field.
 	"""
-	setTorrentLimits(infoHash: InfoHash!, uploadLimit: Int, downloadLimit: Int, maxUploads: Int, maxConnections: Int): Boolean!
+	setTorrentLimits(uuid: UUID!, uploadLimit: Int, downloadLimit: Int, maxUploads: Int, maxConnections: Int): Boolean!
 	"""
 	Atomically sets and unsets torrent flags, returning the
 	resulting flag list. A flag in both lists ends up set. Some
 	flags only matter at add time or are engine-managed; see
 	`TorrentFlag`.
 	"""
-	setTorrentFlags(infoHash: InfoHash!, set: [TorrentFlag!]! = [], unset: [TorrentFlag!]! = []): [TorrentFlag!]!
+	setTorrentFlags(uuid: UUID!, set: [TorrentFlag!]! = [], unset: [TorrentFlag!]! = []): [TorrentFlag!]!
 	"""
 	Moves the torrent to the top of the download queue.
 	"""
-	queueTop(infoHash: InfoHash!): Boolean!
+	queueTop(uuid: UUID!): Boolean!
 	"""
 	Moves the torrent one step up the download queue.
 	"""
-	queueUp(infoHash: InfoHash!): Boolean!
+	queueUp(uuid: UUID!): Boolean!
 	"""
 	Moves the torrent one step down the download queue.
 	"""
-	queueDown(infoHash: InfoHash!): Boolean!
+	queueDown(uuid: UUID!): Boolean!
 	"""
 	Moves the torrent to the bottom of the download queue.
 	"""
-	queueBottom(infoHash: InfoHash!): Boolean!
+	queueBottom(uuid: UUID!): Boolean!
 	"""
 	Sets the torrent's queue position (0-based; clamped to the end
 	of the queue).
 	"""
-	setQueuePosition(infoHash: InfoHash!, position: Int!): Boolean!
+	setQueuePosition(uuid: UUID!, position: Int!): Boolean!
 	"""
 	Adds a tracker to the torrent. `tier` must be within 0..=255
 	(tiers are stored as 8-bit values). The change reaches the resume
 	file with the periodic sweep or the shutdown checkpoint.
 	"""
-	addTracker(infoHash: InfoHash!, url: String!, tier: Int! = 0): Boolean!
+	addTracker(uuid: UUID!, url: String!, tier: Int! = 0): Boolean!
 	"""
 	Replaces the torrent's full tracker list (an empty list removes
 	all trackers), then durably persists the torrent's resume data so
 	removals survive a restart. Tiers must be within 0..=255.
 	"""
-	replaceTrackers(infoHash: InfoHash!, trackers: [TrackerInput!]!): Boolean!
+	replaceTrackers(uuid: UUID!, trackers: [TrackerInput!]!): Boolean!
 	"""
 	Scrapes a tracker and waits for its response, updating the
 	torrent's swarm counts. `trackerIndex` -1 means the last working
 	tracker, otherwise it indexes the current `trackers` list.
 	"""
-	scrapeTracker(infoHash: InfoHash!, trackerIndex: Int! = -1): ScrapeResult!
+	scrapeTracker(uuid: UUID!, trackerIndex: Int! = -1): ScrapeResult!
 	"""
 	Adds an HTTP/web seed.
 	"""
-	addUrlSeed(infoHash: InfoHash!, url: String!): Boolean!
+	addUrlSeed(uuid: UUID!, url: String!): Boolean!
 	"""
 	Removes an HTTP/web seed.
 	"""
-	removeUrlSeed(infoHash: InfoHash!, url: String!): Boolean!
+	removeUrlSeed(uuid: UUID!, url: String!): Boolean!
 	"""
 	Manually connects a peer. `address` is an IP literal plus port —
 	`1.2.3.4:6881` or `[2001:db8::1]:6881`; hostnames are not
 	accepted. Acceptance does not imply a successful handshake.
 	"""
-	connectPeer(infoHash: InfoHash!, address: String!): Boolean!
+	connectPeer(uuid: UUID!, address: String!): Boolean!
 	"""
 	Reads one already-downloaded piece from storage and returns its
 	exact bytes (the final piece may be shorter than `pieceLength`).
 	"""
-	readPiece(infoHash: InfoHash!, piece: Int!): Base64!
+	readPiece(uuid: UUID!, piece: Int!): Base64!
 	"""
 	Applies a settings delta atomically and persists it, returning
 	the full new effective settings (select the fields you need).
@@ -1271,13 +1244,9 @@ selection).
 """
 type PeersEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Number of connected peers in the snapshot.
 	"""
@@ -1481,9 +1450,21 @@ type QueryRoot {
 	"""
 	torrents(state: TorrentState): [Torrent!]!
 	"""
-	One torrent by v1 or v2 info-hash, or `null` if not in the session.
+	One torrent by its uuid, or `null` if not in the session.
 	"""
-	torrent(infoHash: InfoHash!): Torrent
+	torrent(uuid: UUID!): Torrent
+	"""
+	One torrent by its v1 (SHA-1) info-hash, or `null` if not in the
+	session. A hybrid torrent is found by either of its hashes; a
+	magnet gains its hashes only when metadata arrives. The durable
+	key is the uuid — prefer `torrent(uuid:)` when you have one.
+	"""
+	torrentByHashV1(hash: Sha1Sum!): Torrent
+	"""
+	One torrent by its v2 (SHA-256) info-hash: the v2 twin of
+	`torrentByHashV1`.
+	"""
+	torrentByHashV2(hash: Sha256Sum!): Torrent
 	"""
 	One sample of the session statistics counters (all metrics, or
 	the named subset). Unknown names are silently omitted, and
@@ -1521,13 +1502,9 @@ A piece read completed (the outcome of `readPiece`).
 """
 type ReadPieceEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Zero-based piece index.
 	"""
@@ -1548,13 +1525,9 @@ Generating or persisting resume data failed.
 """
 type ResumeDataFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Failure description. Nullable only so that `error` merges across
 	event types in one selection; this event always carries one.
@@ -1567,13 +1540,9 @@ Resume data was generated and persisted.
 """
 type ResumeDataSavedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -1581,13 +1550,9 @@ A tracker scrape failed.
 """
 type ScrapeFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	The URL of the tracker that failed, when known.
 	"""
@@ -1604,13 +1569,9 @@ A tracker answered a scrape (the outcome of `scrapeTracker`).
 """
 type ScrapeReplyEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	The URL of the tracker that answered, when known.
 	"""
@@ -4002,6 +3963,16 @@ input SettingsInput {
 }
 
 """
+A SHA-1 digest: 40 hex characters.
+"""
+scalar Sha1Sum
+
+"""
+A SHA-256 digest: 64 hex characters.
+"""
+scalar Sha256Sum
+
+"""
 Whether a metric only ever increases or fluctuates.
 """
 enum StatKind {
@@ -4040,13 +4011,9 @@ The torrent's lifecycle state changed.
 """
 type StateChangedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	The new state.
 	"""
@@ -4093,13 +4060,9 @@ The torrent's storage finished moving (the outcome of
 """
 type StorageMovedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	The new save path.
 	"""
@@ -4111,13 +4074,9 @@ Moving the torrent's storage failed.
 """
 type StorageMovedFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Failure description, when the engine supplied one.
 	"""
@@ -4140,14 +4099,14 @@ type SubscriptionRoot {
 	ends), since missed events can include removals: resubscribe and
 	take a fresh snapshot.
 	"""
-	torrentEvents(infoHash: InfoHash): TorrentEvent!
+	torrentEvents(uuid: UUID): TorrentEvent!
 	"""
 	Non-empty batches of status snapshots of torrents that changed,
 	about once per second — optionally restricted to one torrent
 	(filtering on an unknown torrent fails at subscription start).
 	Subscribing activates the engine's periodic state updates.
 	"""
-	torrentChanged(infoHash: InfoHash): [Torrent!]!
+	torrentChanged(uuid: UUID): [Torrent!]!
 	"""
 	Progress of one torrent-creation job: the current snapshot
 	immediately, then coalesced changes, ending with one terminal
@@ -4187,24 +4146,21 @@ separate live requests and can reflect a slightly later state.
 """
 type Torrent {
 	"""
-	Session-unique id. NOT stable across daemon restarts; use the
-	info-hash as the durable identifier.
+	The torrent's durable identifier: minted when the torrent is
+	added, stable across daemon restarts, and the sole key for all
+	torrent operations.
 	"""
-	id: Int!
-	"""
-	Best info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	uuid: UUID!
 	"""
 	The v1 (SHA-1) info-hash, if the torrent has one. A hybrid
 	magnet may gain it when metadata arrives.
 	"""
-	infoHashV1: InfoHash
+	infoHashV1: Sha1Sum
 	"""
 	The v2 (SHA-256) info-hash, if the torrent has one. A hybrid
 	magnet may gain it when metadata arrives.
 	"""
-	infoHashV2: InfoHash
+	infoHashV2: Sha256Sum
 	"""
 	Display name: from metadata, or the provisional add/magnet name
 	before metadata.
@@ -4529,13 +4485,9 @@ A torrent was added and registered in the session.
 """
 type TorrentAddedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -4544,13 +4496,9 @@ failed.
 """
 type TorrentDeleteFailedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Failure description, when the engine supplied one.
 	"""
@@ -4563,13 +4511,9 @@ completed.
 """
 type TorrentDeletedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -4577,13 +4521,9 @@ The torrent entered an error state and stopped.
 """
 type TorrentErrorEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	Error description, when the engine supplied one.
 	"""
@@ -4675,13 +4615,9 @@ All selected (priority-nonzero) content finished downloading.
 """
 type TorrentFinishedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -4796,13 +4732,9 @@ completes separately (`TorrentDeletedEvent`).
 """
 type TorrentRemovedEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 }
 
 """
@@ -4917,13 +4849,9 @@ mutation that resolves tracker indexes).
 """
 type TrackersEvent {
 	"""
-	Session-local torrent id.
+	The torrent's durable identifier.
 	"""
-	torrentId: Int!
-	"""
-	The torrent's info-hash (v1 preferred).
-	"""
-	infoHash: InfoHash!
+	torrentUuid: UUID!
 	"""
 	The torrent's trackers, in current tracker order.
 	"""
@@ -4957,6 +4885,18 @@ input TransportDirectionsInput {
 	"""
 	outgoing: Boolean!
 }
+
+"""
+A UUID is a unique 128-bit number, stored as 16 octets. UUIDs are parsed as
+Strings within GraphQL. UUIDs are used to assign unique identifiers to
+entities without requiring a central allocating authority.
+
+# References
+
+* [Wikipedia: Universally Unique Identifier](http://en.wikipedia.org/wiki/Universally_unique_identifier)
+* [RFC4122: A Universally Unique Identifier (UUID) URN Namespace](http://tools.ietf.org/html/rfc4122)
+"""
+scalar UUID
 
 """
 The user agent identity presented to trackers and peers.
@@ -5009,6 +4949,10 @@ directive @include(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 Directs the executor to skip this field or fragment when the `if` argument is true.
 """
 directive @skip(if: Boolean!) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+"""
+Provides a scalar specification URL for specifying the behavior of custom scalar types.
+"""
+directive @specifiedBy(url: String!) on SCALAR
 schema {
 	query: QueryRoot
 	mutation: MutationRoot

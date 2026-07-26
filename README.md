@@ -93,7 +93,7 @@ quick checks; it ships with every build (in the container:
 ```sh
 export RSBTCTL_TOKEN=change-me
 rsbtctl --url http://127.0.0.1:3928 add --magnet 'magnet:?xt=...' --save-path /data
-rsbtctl --url http://127.0.0.1:3928 wait <infohash> --until finished
+rsbtctl --url http://127.0.0.1:3928 wait <uuid> --until finished
 rsbtctl --unix /run/rsbtd/api.sock list --state seeding --json
 rsbtctl --unix /run/rsbtd/api.sock settings set upload_rate_limit=1000000 user_agent=qBittorrent
 rsbtctl --unix /run/rsbtd/api.sock settings set 'proxy={"protocol":"socks5","hostname":"10.0.0.1","port":1080,"resolve_hostnames":true,"peer_connections":true,"tracker_connections":true}'

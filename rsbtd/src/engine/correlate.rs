@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 use super::EngineError;
 use super::events::{Event, EventKind};
@@ -28,7 +29,7 @@ pub const MOVE_STORAGE_TIMEOUT: Duration = Duration::from_secs(600);
 /// Posts an operation and awaits its response event.
 ///
 /// `matcher` returns `Some(result)` for the event that answers this
-/// request (match on the torrent id *and* the operation-specific key).
+/// request (match on the torrent uuid *and* the operation-specific key).
 /// The `shutdown` token aborts the wait promptly (and refuses to post
 /// once cancelled): waiters hold session references that the engine
 /// needs released before it can close the session gracefully.
@@ -85,7 +86,7 @@ pub async fn request_serialized<T: Send + 'static>(
     events: &broadcast::Sender<Arc<Event>>,
     shutdown: &CancellationToken,
     guard: tokio::sync::OwnedMutexGuard<()>,
-    torrent_id: u32,
+    torrent: Uuid,
     post: impl FnOnce() -> Result<(), EngineError>,
     mut matcher: impl FnMut(&Event) -> Option<Result<T, EngineError>> + Send + 'static,
     timeout: Duration,
@@ -104,7 +105,7 @@ pub async fn request_serialized<T: Send + 'static>(
         let event = match recv {
             Ok(event) => event,
             Err(_elapsed) => {
-                tokio::spawn(drain(rx, matcher, guard, torrent_id, shutdown.clone()));
+                tokio::spawn(drain(rx, matcher, guard, torrent, shutdown.clone()));
                 return Err(EngineError::Timeout);
             }
         };
@@ -132,7 +133,7 @@ async fn drain<T>(
     mut rx: broadcast::Receiver<Arc<Event>>,
     mut matcher: impl FnMut(&Event) -> Option<Result<T, EngineError>>,
     guard: tokio::sync::OwnedMutexGuard<()>,
-    torrent_id: u32,
+    torrent: Uuid,
     shutdown: CancellationToken,
 ) {
     let _guard = guard;
@@ -147,8 +148,7 @@ async fn drain<T>(
                     return;
                 }
                 // A removed torrent's operation may never answer.
-                if is_torrent(&event, torrent_id) && matches!(event.kind, EventKind::TorrentRemoved)
-                {
+                if is_torrent(&event, torrent) && matches!(event.kind, EventKind::TorrentRemoved) {
                     return;
                 }
             }
@@ -160,23 +160,23 @@ async fn drain<T>(
     }
 }
 
-/// Matcher helper: whether `event` belongs to torrent `id`.
-pub fn is_torrent(event: &Event, id: u32) -> bool {
-    event.torrent.map(|t| t.id) == Some(id)
+/// Matcher helper: whether `event` belongs to torrent `uuid`.
+pub fn is_torrent(event: &Event, uuid: Uuid) -> bool {
+    event.torrent == Some(uuid)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::events::{EventKind, TorrentRef};
-    use rbtorrent::InfoHash;
+    use crate::engine::events::EventKind;
 
-    fn event(id: u32, kind: EventKind) -> Arc<Event> {
+    fn uuid(n: u128) -> Uuid {
+        Uuid::from_u128(n)
+    }
+
+    fn event(n: u128, kind: EventKind) -> Arc<Event> {
         Arc::new(Event {
-            torrent: Some(TorrentRef {
-                id,
-                info_hash: InfoHash::new(None, None),
-            }),
+            torrent: Some(uuid(n)),
             kind,
         })
     }
@@ -191,8 +191,9 @@ mod tests {
             &token,
             || Ok(()),
             |e| {
-                (is_torrent(e, 7) && matches!(e.kind, EventKind::FileRenamed { index: 3, .. }))
-                    .then_some(Ok(()))
+                (is_torrent(e, uuid(7))
+                    && matches!(e.kind, EventKind::FileRenamed { index: 3, .. }))
+                .then_some(Ok(()))
             },
             Duration::from_secs(5),
         );
@@ -266,10 +267,10 @@ mod tests {
             tx,
             token,
             guard,
-            7,
+            uuid(7),
             || Ok(()),
             |e| {
-                (is_torrent(e, 7) && matches!(e.kind, EventKind::StorageMoved { .. }))
+                (is_torrent(e, uuid(7)) && matches!(e.kind, EventKind::StorageMoved { .. }))
                     .then_some(Ok(()))
             },
             Duration::from_millis(50),

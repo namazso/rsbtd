@@ -9,7 +9,7 @@ import i18next from 'i18next';
 import { create } from 'zustand';
 import { request } from '@/api/client';
 import {
-  TorrentByHashQuery,
+  TorrentByUuidQuery,
   TorrentChangedSubscription,
   TorrentEventsSubscription,
   TorrentsQuery,
@@ -18,10 +18,8 @@ import { SessionStatsStreamSubscription } from '@/api/operations/stats';
 import { subscribeRetrying } from '@/api/ws';
 import { connection, setSessionError, useConnection } from '@/store/connection';
 import { usePrefs } from '@/store/prefs';
-import { onTorrentRekey, useTorrents } from '@/store/torrents';
-import { useSelection } from '@/store/selection';
+import { useTorrents } from '@/store/torrents';
 import { useStatusStats } from '@/store/statusStats';
-import { useUi } from '@/store/ui';
 import type { ResultOf } from '@graphql-typed-document-node/core';
 
 /**
@@ -68,12 +66,6 @@ export function startLive(): void {
     // Perf fixture: rsbtdMock(5000) in the console seeds synthetic rows.
     void import('@/lib/devMock').then((m) => m.installDevMock());
   }
-
-  // Keep selection and the open-details route in step with the store.
-  onTorrentRekey((oldHash, newHash) => {
-    useSelection.getState().migrate(oldHash, newHash);
-    useUi.getState().onTorrentRekeyed(oldHash, newHash);
-  });
 
   let prev = useConnection.getState();
   useConnection.subscribe((snap) => {
@@ -199,10 +191,10 @@ function stopPolling(): void {
   }
 }
 
-async function fetchRow(hash: string): Promise<void> {
+async function fetchRow(uuid: string): Promise<void> {
   const generation = useConnection.getState().generation;
   try {
-    const data = await request(TorrentByHashQuery, { hash });
+    const data = await request(TorrentByUuidQuery, { uuid });
     const row = data.torrent;
     if (row == null || useConnection.getState().generation !== generation) return;
     applyLive(() => useTorrents.getState().upsert(row));
@@ -214,52 +206,47 @@ async function fetchRow(hash: string): Promise<void> {
 /** Refresh one torrent's flat row on demand (flag writebacks etc.). */
 export const refreshTorrent = fetchRow;
 
-function torrentName(hash: string): string {
-  const store = useTorrents.getState();
-  const canonical = store.resolve(hash) ?? hash;
-  return store.byHash.get(canonical)?.name ?? `${hash.slice(0, 8)}…`;
+function torrentName(uuid: string): string {
+  return useTorrents.getState().byUuid.get(uuid)?.name ?? `${uuid.slice(0, 8)}…`;
 }
 
 function handleEvent(event: TorrentEvent): void {
   switch (event.__typename) {
     case 'TorrentAddedEvent':
     case 'MetadataReceivedEvent':
-      void fetchRow(event.infoHash);
+      void fetchRow(event.torrentUuid);
       break;
-    case 'TorrentRemovedEvent': {
-      const canonical = useTorrents.getState().resolve(event.infoHash) ?? event.infoHash;
-      useTorrents.getState().remove(event.infoHash);
-      useSelection.getState().discard([canonical]);
-      useUi.getState().onTorrentGone(canonical);
+    case 'TorrentRemovedEvent':
+      // remove() reconciles selection and the open-details route.
+      useTorrents.getState().remove(event.torrentUuid);
       break;
-    }
     case 'TorrentFinishedEvent':
-      toast.success(i18next.t('events.finished', { name: torrentName(event.infoHash) }));
+      toast.success(i18next.t('events.finished', { name: torrentName(event.torrentUuid) }));
       break;
     case 'TorrentErrorEvent':
       toast.error(
         i18next.t('events.torrentError', {
-          name: torrentName(event.infoHash),
+          name: torrentName(event.torrentUuid),
           message: event.error ?? event.filename ?? '',
         }),
       );
-      void fetchRow(event.infoHash);
+      void fetchRow(event.torrentUuid);
       break;
     case 'MetadataFailedEvent':
       toast.error(
         i18next.t('events.metadataFailed', {
-          name: torrentName(event.infoHash),
+          name: torrentName(event.torrentUuid),
           message: event.error ?? '',
         }),
       );
       break;
     case 'TorrentDeletedEvent':
-      toast.success(i18next.t('events.deleted', { name: torrentName(event.infoHash) }));
+      toast.success(i18next.t('events.deleted', { name: torrentName(event.torrentUuid) }));
       break;
     case 'TorrentDeleteFailedEvent':
       toast.error(
         i18next.t('events.deleteFailed', {
-          name: torrentName(event.infoHash),
+          name: torrentName(event.torrentUuid),
           message: event.error ?? '',
         }),
       );
@@ -267,7 +254,7 @@ function handleEvent(event: TorrentEvent): void {
     case 'StorageMovedFailedEvent':
       toast.error(
         i18next.t('events.storageMoveFailed', {
-          name: torrentName(event.infoHash),
+          name: torrentName(event.torrentUuid),
           message: event.error ?? '',
         }),
       );

@@ -11,8 +11,9 @@ use std::sync::{Arc, OnceLock};
 
 use async_graphql::{Context, Object};
 use rbtorrent::{MetricKind, StatsMetric};
+use uuid::Uuid;
 
-use super::scalars::InfoHash;
+use super::scalars::{Sha1Sum, Sha256Sum};
 use super::settings::Settings;
 use super::types::{
     CreateJob, IpFilterRule, SessionInfo, StatKind, StatValue, Torrent, TorrentState, VersionInfo,
@@ -92,14 +93,44 @@ impl QueryRoot {
         Ok(torrents)
     }
 
-    /// One torrent by v1 or v2 info-hash, or `null` if not in the session.
+    /// One torrent by its uuid, or `null` if not in the session.
     async fn torrent(
         &self,
         ctx: &Context<'_>,
-        info_hash: InfoHash,
+        uuid: Uuid,
     ) -> async_graphql::Result<Option<Torrent>> {
         let engine = ctx.data::<Arc<Engine>>()?;
-        match engine.registry().find(&info_hash.0) {
+        match engine.registry().find(&uuid) {
+            None => Ok(None),
+            Some(entry) => Ok(Some(Torrent::load(engine, entry)?)),
+        }
+    }
+
+    /// One torrent by its v1 (SHA-1) info-hash, or `null` if not in the
+    /// session. A hybrid torrent is found by either of its hashes; a
+    /// magnet gains its hashes only when metadata arrives. The durable
+    /// key is the uuid — prefer `torrent(uuid:)` when you have one.
+    async fn torrent_by_hash_v1(
+        &self,
+        ctx: &Context<'_>,
+        hash: Sha1Sum,
+    ) -> async_graphql::Result<Option<Torrent>> {
+        let engine = ctx.data::<Arc<Engine>>()?;
+        match engine.find_by_info_hash_v1(hash.0)? {
+            None => Ok(None),
+            Some(entry) => Ok(Some(Torrent::load(engine, entry)?)),
+        }
+    }
+
+    /// One torrent by its v2 (SHA-256) info-hash: the v2 twin of
+    /// `torrentByHashV1`.
+    async fn torrent_by_hash_v2(
+        &self,
+        ctx: &Context<'_>,
+        hash: Sha256Sum,
+    ) -> async_graphql::Result<Option<Torrent>> {
+        let engine = ctx.data::<Arc<Engine>>()?;
+        match engine.find_by_info_hash_v2(hash.0)? {
             None => Ok(None),
             Some(entry) => Ok(Some(Torrent::load(engine, entry)?)),
         }
