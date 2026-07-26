@@ -385,6 +385,37 @@ async fn read_surface_over_tcp() {
     assert_eq!(data_json["missing"], Value::Null);
     assert_eq!(data_json["downloading"], json!([]));
 
+    // The hash lookups reach the same torrent as its uuid. Each probes
+    // only its own hash form, and the fixture is v1-only, so the v2
+    // lookup misses even for a torrent that is in the session.
+    let data_json = graphql(
+        addr,
+        token,
+        &format!(
+            "{{ byV1: torrentByHashV1(hash: \"{v1_hex}\") {{ uuid name infoHashV1 }} \
+               missingV1: torrentByHashV1(hash: \"{}\") {{ uuid }} \
+               missingV2: torrentByHashV2(hash: \"{}\") {{ uuid }} }}",
+            "0".repeat(40),
+            "0".repeat(64),
+        ),
+    )
+    .await;
+    assert_eq!(data_json["byV1"]["uuid"], uuid.to_string());
+    assert!(data_json["byV1"]["name"].is_string());
+    assert_eq!(data_json["byV1"]["infoHashV1"], v1_hex);
+    assert_eq!(data_json["missingV1"], Value::Null);
+    assert_eq!(data_json["missingV2"], Value::Null);
+
+    // A digest of the wrong length is a scalar parse error, not a miss.
+    let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+    let (status, body) = raw_request(
+        stream,
+        graphql_request(token, r#"{ torrentByHashV1(hash: "abcd") { uuid } }"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.contains("expected 40 hex characters"), "{body}");
+
     daemon.stop().await;
 }
 

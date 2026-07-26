@@ -204,6 +204,79 @@ async fn token_lookup_and_status_identity() {
 }
 
 #[tokio::test]
+async fn info_hash_lookup() {
+    // A hybrid torrent has both hash forms, so one torrent exercises both
+    // lookups.
+    let fixture_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/hybrid.torrent");
+    let save_dir = tempfile::tempdir().unwrap();
+    let mut atp = AddTorrentParams::from_torrent_file(&fixture_path).unwrap();
+    atp.set_save_path(save_dir.path().to_str().unwrap());
+
+    let mut settings = SettingsPack::new();
+    settings
+        .enable_dht(false)
+        .enable_lsd(false)
+        .enable_upnp(false)
+        .enable_natpmp(false)
+        .listen_interfaces(&[rbtorrent::ListenEndpoint::new("127.0.0.1", 0)])
+        .unwrap();
+
+    let session = Session::new(SessionParams::new().settings(&settings)).unwrap();
+    let mut alerts = session.alerts();
+
+    let handle = {
+        let add = session.add_torrent(&atp, std::sync::Arc::new(()));
+        tokio::pin!(add);
+        loop {
+            tokio::select! {
+                result = &mut add => break result.unwrap(),
+                batch = alerts.next_batch() => { batch.unwrap(); }
+            }
+        }
+    };
+
+    let hashes = handle.info_hashes();
+    let v1 = hashes.v1().expect("hybrid has a v1 hash");
+    let v2 = hashes.v2().expect("hybrid has a v2 hash");
+
+    // Either hash form finds the same torrent.
+    let by_v1 = session
+        .find_torrent_v1(v1)
+        .expect("findable by its v1 hash");
+    assert_eq!(by_v1.id(), handle.id());
+    let by_v2 = session
+        .find_torrent_v2(v2)
+        .expect("findable by its v2 hash");
+    assert_eq!(by_v2.id(), handle.id());
+    assert_eq!(by_v2.info_hashes(), hashes);
+
+    // Misses: the zero hash and a hash no torrent has. Each lookup only
+    // probes its own hash form, so a v1 hash never matches via v2.
+    assert!(
+        session
+            .find_torrent_v1(rbtorrent::Sha1Hash([0; 20]))
+            .is_none()
+    );
+    assert!(
+        session
+            .find_torrent_v1(rbtorrent::Sha1Hash([0xab; 20]))
+            .is_none()
+    );
+    assert!(
+        session
+            .find_torrent_v2(rbtorrent::Sha256Hash([0xab; 32]))
+            .is_none()
+    );
+
+    drop(by_v1);
+    drop(by_v2);
+    drop(handle);
+    drop(alerts);
+    session.close().await;
+}
+
+#[tokio::test]
 async fn reopen_network_sockets() {
     let mut settings = SettingsPack::new();
     settings

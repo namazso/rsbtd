@@ -527,6 +527,39 @@ impl Session {
         Some(crate::handle::TorrentHandle::from_raw(raw, self))
     }
 
+    /// Looks a torrent up by its v1 (SHA-1) info-hash; hybrid torrents are
+    /// found by either hash form. Returns `None` when no torrent matches.
+    /// Briefly blocking (round-trips to the network thread), unlike
+    /// [`find_torrent_by_token`](Session::find_torrent_by_token).
+    pub fn find_torrent_v1(
+        &self,
+        hash: crate::types::Sha1Hash,
+    ) -> Option<crate::handle::TorrentHandle<'_>> {
+        let ct = sys::ct_sha1 { data: hash.0 };
+        let mut out = std::mem::MaybeUninit::<sys::ct_torrent_handle>::uninit();
+        // SAFETY: session valid; on `true` the shim placement-constructed
+        // an owned handle into `out`, whose ownership we take.
+        unsafe {
+            sys::ct_session_find_torrent_v1(self.ptr(), &ct, out.as_mut_ptr())
+                .then(|| crate::handle::TorrentHandle::from_owned(out.assume_init(), self))
+        }
+    }
+
+    /// Looks a torrent up by its v2 (SHA-256) info-hash; the v2 twin of
+    /// [`find_torrent_v1`](Session::find_torrent_v1).
+    pub fn find_torrent_v2(
+        &self,
+        hash: crate::types::Sha256Hash,
+    ) -> Option<crate::handle::TorrentHandle<'_>> {
+        let ct = sys::ct_sha256 { data: hash.0 };
+        let mut out = std::mem::MaybeUninit::<sys::ct_torrent_handle>::uninit();
+        // SAFETY: as in `find_torrent_v1`.
+        unsafe {
+            sys::ct_session_find_torrent_v2(self.ptr(), &ct, out.as_mut_ptr())
+                .then(|| crate::handle::TorrentHandle::from_owned(out.assume_init(), self))
+        }
+    }
+
     /// Serializes an [`AddTorrentParams`](crate::params::AddTorrentParams) to a
     /// bencoded buffer for resume data persistence.
     pub fn write_resume_data(params: &crate::params::AddTorrentParams) -> Result<Vec<u8>> {

@@ -397,6 +397,21 @@ async fn subprocess_daemon_driven_by_ctl() {
     assert!(ok && stdout.contains(&uuid), "list output: {stdout}");
     let (ok, stdout, _) = ctl(args(&["status", &uuid])).await;
     assert!(ok && stdout.contains("state: SEEDING"), "status: {stdout}");
+    // The same torrent, addressed by its v1 info-hash.
+    let v1_hex = rbtorrent::AddTorrentParams::from_torrent_file(fixture_path())
+        .unwrap()
+        .info_hashes()
+        .v1()
+        .unwrap()
+        .to_string();
+    let (ok, stdout, _) = ctl(args(&["status", "--hash-v1", &v1_hex])).await;
+    assert!(
+        ok && stdout.contains("state: SEEDING"),
+        "status by hash: {stdout}"
+    );
+    // The fixture is v1-only, so its v2 lookup finds nothing.
+    let (ok, _, stderr) = ctl(args(&["status", "--hash-v2", &"0".repeat(64)])).await;
+    assert!(!ok && stderr.contains("not found"), "status v2: {stderr}");
     let (ok, stdout, stderr) = ctl(args(&["settings", "set", "upload_rate_limit=123456"])).await;
     assert!(ok, "settings set failed: {stderr}");
     assert!(stdout.contains("123456"));

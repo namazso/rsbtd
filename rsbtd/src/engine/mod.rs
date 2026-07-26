@@ -28,7 +28,7 @@ use std::time::Duration;
 
 use rbtorrent::{
     AddTorrentParams, AlertCategory, ClientData as _, InfoHash, RemoveFlags, SaveStateFlags,
-    Session, SessionParams, SettingsPack, TorrentFlags, TorrentHandle,
+    Session, SessionParams, SettingsPack, Sha1Hash, Sha256Hash, TorrentFlags, TorrentHandle,
 };
 use tokio::sync::{Notify, broadcast, mpsc, watch};
 use tokio::task::JoinHandle;
@@ -533,6 +533,37 @@ impl Engine {
             .find_torrent_by_token(entry.token)
             .ok_or(EngineError::NotFound)?;
         Ok(f(&handle))
+    }
+
+    /// The registry entry of the torrent with this v1 (SHA-1) info-hash,
+    /// asked of libtorrent directly (briefly blocking). `None` when the
+    /// session has no such torrent.
+    pub fn find_by_info_hash_v1(
+        &self,
+        hash: Sha1Hash,
+    ) -> Result<Option<Arc<TorrentEntry>>, EngineError> {
+        let session = self.session()?;
+        Ok(session
+            .find_torrent_v1(hash)
+            .and_then(|h| self.entry_of(&h)))
+    }
+
+    /// The v2 (SHA-256) twin of [`Engine::find_by_info_hash_v1`].
+    pub fn find_by_info_hash_v2(
+        &self,
+        hash: Sha256Hash,
+    ) -> Result<Option<Arc<TorrentEntry>>, EngineError> {
+        let session = self.session()?;
+        Ok(session
+            .find_torrent_v2(hash)
+            .and_then(|h| self.entry_of(&h)))
+    }
+
+    /// The registry entry behind a live handle: `None` for an expired
+    /// handle, or a torrent this engine never registered.
+    fn entry_of(&self, handle: &TorrentHandle<'_>) -> Option<Arc<TorrentEntry>> {
+        self.registry
+            .find_by_token(handle.client_data_token().ok()?)
     }
 
     pub fn registry(&self) -> &Registry {

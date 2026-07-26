@@ -68,7 +68,7 @@ enum Command {
         state: Option<String>,
     },
     /// Detailed status of one torrent.
-    Status { uuid: String },
+    Status(StatusArgs),
     /// Add a torrent from a magnet link or a .torrent file.
     Add(AddArgs),
     /// Remove a torrent.
@@ -108,6 +108,22 @@ enum Command {
     },
     /// Create a .torrent from a local file or directory.
     Create(CreateArgs),
+}
+
+#[derive(Args)]
+struct StatusArgs {
+    /// Torrent uuid.
+    #[arg(
+        required_unless_present_any = ["hash_v1", "hash_v2"],
+        conflicts_with_all = ["hash_v1", "hash_v2"],
+    )]
+    uuid: Option<String>,
+    /// Look the torrent up by its v1 (SHA-1) info-hash: 40 hex characters.
+    #[arg(long, conflicts_with = "hash_v2")]
+    hash_v1: Option<String>,
+    /// Look the torrent up by its v2 (SHA-256) info-hash: 64 hex characters.
+    #[arg(long)]
+    hash_v2: Option<String>,
 }
 
 #[derive(Args)]
@@ -296,17 +312,41 @@ async fn run(cli: Cli) -> Result<(), String> {
                     .join("\n")
             });
         }
-        Command::Status { uuid } => {
-            let data = gql(
-                "query($u: UUID!) { torrent(uuid: $u) { \
-                   name state progressPpm savePath totalSize totalDone \
-                   downloadRate uploadRate numPeers numSeeds isPaused isFinished \
-                   isSeeding hasMetadata magnetUri flags error { message } } }",
-                json!({ "u": uuid }),
-            )
-            .await?;
+        Command::Status(args) => {
+            const FIELDS: &str = "name state progressPpm savePath totalSize totalDone \
+                 downloadRate uploadRate numPeers numSeeds isPaused isFinished \
+                 isSeeding hasMetadata magnetUri flags error { message }";
+            // The hash lookups are aliased back to `torrent`, so the
+            // response shape is the same whichever key was given.
+            let (query, variables, ident) = match (args.uuid, args.hash_v1, args.hash_v2) {
+                (Some(uuid), ..) => (
+                    format!("query($k: UUID!) {{ torrent(uuid: $k) {{ {FIELDS} }} }}"),
+                    json!({ "k": uuid }),
+                    uuid,
+                ),
+                (_, Some(hash), _) => (
+                    format!(
+                        "query($k: Sha1Sum!) {{ torrent: torrentByHashV1(hash: $k) {{ {FIELDS} }} }}"
+                    ),
+                    json!({ "k": hash }),
+                    hash,
+                ),
+                (_, _, Some(hash)) => (
+                    format!(
+                        "query($k: Sha256Sum!) {{ torrent: torrentByHashV2(hash: $k) {{ {FIELDS} }} }}"
+                    ),
+                    json!({ "k": hash }),
+                    hash,
+                ),
+                // clap requires the uuid unless a hash flag is present.
+                (None, None, None) => unreachable!("status takes a uuid or a hash"),
+            };
+            let data = client
+                .graphql(&query, variables)
+                .await
+                .map_err(|e| e.to_string())?;
             if data["torrent"].is_null() {
-                return Err(format!("torrent {uuid} not found"));
+                return Err(format!("torrent {ident} not found"));
             }
             print(&data, &|d| {
                 let t = &d["torrent"];

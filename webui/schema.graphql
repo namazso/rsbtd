@@ -1454,6 +1454,18 @@ type QueryRoot {
 	"""
 	torrent(uuid: UUID!): Torrent
 	"""
+	One torrent by its v1 (SHA-1) info-hash, or `null` if not in the
+	session. A hybrid torrent is found by either of its hashes; a
+	magnet gains its hashes only when metadata arrives. The durable
+	key is the uuid — prefer `torrent(uuid:)` when you have one.
+	"""
+	torrentByHashV1(hash: Sha1Sum!): Torrent
+	"""
+	One torrent by its v2 (SHA-256) info-hash: the v2 twin of
+	`torrentByHashV1`.
+	"""
+	torrentByHashV2(hash: Sha256Sum!): Torrent
+	"""
 	One sample of the session statistics counters (all metrics, or
 	the named subset). Unknown names are silently omitted, and
 	results follow the daemon's fixed metric-table order, not input

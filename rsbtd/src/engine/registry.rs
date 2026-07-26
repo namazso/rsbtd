@@ -107,6 +107,13 @@ impl Registry {
         self.inner.read().unwrap().by_uuid.get(uuid).cloned()
     }
 
+    /// Looks a torrent up by its client-data token.
+    pub fn find_by_token(&self, token: u64) -> Option<Arc<TorrentEntry>> {
+        let inner = self.inner.read().unwrap();
+        let uuid = inner.by_token.get(&token)?;
+        inner.by_uuid.get(uuid).cloned()
+    }
+
     /// All registered torrents (arbitrary order).
     pub fn list(&self) -> Vec<Arc<TorrentEntry>> {
         self.inner
@@ -147,6 +154,8 @@ mod tests {
         assert_eq!(registry.get(7).unwrap().uuid, uuid);
         assert_eq!(registry.find(&uuid).unwrap().id, 7);
         assert!(registry.find(&Uuid::from_u128(2)).is_none());
+        assert_eq!(registry.find_by_token(100).unwrap().uuid, uuid);
+        assert!(registry.find_by_token(999).is_none());
 
         let removed = registry.remove_by_token(100).unwrap();
         assert_eq!(removed.uuid, uuid);

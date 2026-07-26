@@ -122,6 +122,15 @@ impl<'s> TorrentHandle<'s> {
         }
     }
 
+    /// Wraps already-owned handle bytes (the `find_torrent_v*` path); the
+    /// torrent must belong to `session`.
+    pub(crate) fn from_owned(
+        inner: sys::ct_torrent_handle,
+        session: &'s Session,
+    ) -> TorrentHandle<'s> {
+        TorrentHandle { inner, session }
+    }
+
     /// Re-pairs raw handle bytes with the session they came from; the
     /// caller must pass the session whose alerts produced the
     /// [`RawHandle`].
