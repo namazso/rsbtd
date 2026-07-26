@@ -64,15 +64,12 @@ impl SubscriptionRoot {
                 loop {
                     match rx.recv().await {
                         Ok(event) => {
-                            if let Some(f) = &filter {
-                                if let Some(t) = event.torrent {
-                                    if t.uuid != *f {
-                                        continue;
-                                    }
-                                } else {
-                                    // Skip session-level events when filtering by torrent
-                                    continue;
-                                }
+                            // Session-level events (no torrent) are skipped
+                            // when filtering by torrent.
+                            if let Some(f) = &filter
+                                && event.torrent != Some(*f)
+                            {
+                                continue;
                             }
 
                             if let Some(gql_event) =

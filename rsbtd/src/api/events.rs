@@ -46,48 +46,48 @@ impl TorrentEvent {
     pub fn from_engine_event(event: &Event, engine: &crate::engine::Engine) -> Option<Self> {
         match &event.kind {
             EventKind::TorrentAdded => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentAdded(TorrentAddedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::TorrentRemoved => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentRemoved(TorrentRemovedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::TorrentFinished => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentFinished(TorrentFinishedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::MetadataReceived => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::MetadataReceived(MetadataReceivedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::MetadataFailed { error } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::MetadataFailed(MetadataFailedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::TorrentError { error, filename } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentError(TorrentErrorEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                     filename: (!filename.is_empty()).then(|| filename.clone()),
                 }))
             }
             EventKind::StateChanged { state, prev_state } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::StateChanged(StateChangedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     state: rbtorrent::TorrentState::from_code(*state).into(),
                     prev_state: rbtorrent::TorrentState::from_code(*prev_state).into(),
                 }))
@@ -103,75 +103,75 @@ impl TorrentEvent {
                 Some(TorrentEvent::StateUpdate(StateUpdateEvent { torrents }))
             }
             EventKind::ResumeDataSaved => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::ResumeDataSaved(ResumeDataSavedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::ResumeDataFailed { message } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::ResumeDataFailed(ResumeDataFailedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     error: Some(message.clone()),
                 }))
             }
             EventKind::FileRenamed { index, new_name } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::FileRenamed(FileRenamedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     file_index: *index,
                     new_name: new_name.clone(),
                 }))
             }
             EventKind::FileRenameFailed { index, error } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::FileRenameFailed(FileRenameFailedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     file_index: *index,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::StorageMoved { path } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::StorageMoved(StorageMovedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     path: path.clone(),
                 }))
             }
             EventKind::StorageMovedFailed { error } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::StorageMovedFailed(StorageMovedFailedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::ReadPiece { piece, data, error } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::ReadPiece(ReadPieceEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     piece: *piece,
                     data: error.is_none().then(|| Base64Bytes(data.clone())),
                     error: error.as_ref().map(|e| e.to_string()),
                 }))
             }
             EventKind::Trackers(trackers) => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::Trackers(TrackersEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     trackers: trackers.iter().cloned().map(Tracker::from).collect(),
                 }))
             }
             EventKind::Peers(peers) => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::Peers(PeersEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     peer_count: peers.len() as i32,
                 }))
             }
             EventKind::FileProgress(progress) => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::FileProgress(FileProgressEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     progress: progress.clone(),
                 }))
             }
@@ -180,9 +180,9 @@ impl TorrentEvent {
                 incomplete,
                 complete,
             } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::ScrapeReply(ScrapeReplyEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     tracker_url: tracker_url.clone(),
                     incomplete: *incomplete,
                     complete: *complete,
@@ -192,24 +192,24 @@ impl TorrentEvent {
                 tracker_url,
                 error_message,
             } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::ScrapeFailed(ScrapeFailedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                     tracker_url: tracker_url.clone(),
                     error: Some(error_message.clone()),
                 }))
             }
             EventKind::TorrentDeleted => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentDeleted(TorrentDeletedEvent {
-                    torrent_uuid: torrent.uuid,
+                    torrent_uuid,
                 }))
             }
             EventKind::TorrentDeleteFailed { error } => {
-                let torrent = event.torrent?;
+                let torrent_uuid = event.torrent?;
                 Some(TorrentEvent::TorrentDeleteFailed(
                     TorrentDeleteFailedEvent {
-                        torrent_uuid: torrent.uuid,
+                        torrent_uuid,
                         error: error.as_ref().map(|e| e.to_string()),
                     },
                 ))

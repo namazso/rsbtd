@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::sync::{broadcast, mpsc};
 use uuid::Uuid;
 
-use super::events::{Event, EventKind, TorrentRef};
+use super::events::{Event, EventKind};
 use super::{DirtyResume, Inflight};
 
 /// Filename of the serialized session state within the state directory.
@@ -107,12 +107,12 @@ pub fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 /// One unit of work for the persister task.
 #[derive(Debug)]
 pub enum PersistOp {
-    /// Write a torrent's resume data (to `<torrent.uuid>.resume`);
-    /// publishes `ResumeDataSaved`/`Failed` and releases its in-flight
-    /// token when done. `ack` (when present) receives the durable write's
-    /// result, for callers that promised durability.
+    /// Write a torrent's resume data (to `<uuid>.resume`); publishes
+    /// `ResumeDataSaved`/`Failed` and releases its in-flight token when
+    /// done. `ack` (when present) receives the durable write's result,
+    /// for callers that promised durability.
     WriteResume {
-        torrent: TorrentRef,
+        uuid: Uuid,
         bytes: Vec<u8>,
         ack: Option<tokio::sync::oneshot::Sender<std::io::Result<()>>>,
     },
@@ -137,12 +137,8 @@ pub async fn run_persister(
     while let Some(op) = rx.recv().await {
         let paths = paths.clone();
         match op {
-            PersistOp::WriteResume {
-                torrent,
-                bytes,
-                ack,
-            } => {
-                let path = paths.resume_file(&torrent.uuid.to_string());
+            PersistOp::WriteResume { uuid, bytes, ack } => {
+                let path = paths.resume_file(&uuid.to_string());
                 let result =
                     match tokio::task::spawn_blocking(move || write_atomic(&path, &bytes)).await {
                         Ok(r) => r,
@@ -152,21 +148,21 @@ pub async fn run_persister(
                     };
                 let kind = match &result {
                     Ok(()) => {
-                        dirty.remove(torrent.uuid);
+                        dirty.remove(uuid);
                         EventKind::ResumeDataSaved
                     }
                     Err(e) => {
-                        tracing::warn!(%torrent.uuid, "resume write failed: {e}");
+                        tracing::warn!(%uuid, "resume write failed: {e}");
                         // On-disk state now uncertain; the pump retries
                         // and shutdown flushes it.
-                        dirty.insert(torrent.uuid);
+                        dirty.insert(uuid);
                         EventKind::ResumeDataFailed {
                             message: format!("cannot write resume file: {e}"),
                         }
                     }
                 };
                 let _ = events.send(Arc::new(Event {
-                    torrent: Some(torrent),
+                    torrent: Some(uuid),
                     kind,
                 }));
                 inflight.dec();

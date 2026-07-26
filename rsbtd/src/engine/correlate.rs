@@ -162,13 +162,13 @@ async fn drain<T>(
 
 /// Matcher helper: whether `event` belongs to torrent `uuid`.
 pub fn is_torrent(event: &Event, uuid: Uuid) -> bool {
-    event.torrent.map(|t| t.uuid) == Some(uuid)
+    event.torrent == Some(uuid)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::events::{EventKind, TorrentRef};
+    use crate::engine::events::EventKind;
 
     fn uuid(n: u128) -> Uuid {
         Uuid::from_u128(n)
@@ -176,7 +176,7 @@ mod tests {
 
     fn event(n: u128, kind: EventKind) -> Arc<Event> {
         Arc::new(Event {
-            torrent: Some(TorrentRef { uuid: uuid(n) }),
+            torrent: Some(uuid(n)),
             kind,
         })
     }

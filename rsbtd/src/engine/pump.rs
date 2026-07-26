@@ -27,7 +27,7 @@ use tokio::sync::{broadcast, mpsc, watch};
 use uuid::Uuid;
 
 use super::client_data::RsbtData;
-use super::events::{Event, EventKind, TorrentRef, TrackerInfo};
+use super::events::{Event, EventKind, TrackerInfo};
 use super::persist::PersistOp;
 use super::registry::Registry;
 use super::{DirtyResume, Inflight};
@@ -170,20 +170,14 @@ impl BatchState<'_> {
                 // arm also runs for restores, whose on-disk records must
                 // stay untouched. Engine::add_torrent persists the initial
                 // record for new adds from the original params.
-                self.publish(
-                    Some(TorrentRef { uuid: entry.uuid }),
-                    EventKind::TorrentAdded,
-                );
+                self.publish(Some(entry.uuid), EventKind::TorrentAdded);
             }
             Alert::TorrentRemoved(a) => {
                 match self.registry.remove_by_token(a.client_data_token()) {
                     Some(entry) => {
                         self.dirty.remove(entry.uuid);
                         self.ops.push(PersistOp::DeleteResume { uuid: entry.uuid });
-                        self.publish(
-                            Some(TorrentRef { uuid: entry.uuid }),
-                            EventKind::TorrentRemoved,
-                        );
+                        self.publish(Some(entry.uuid), EventKind::TorrentRemoved);
                     }
                     // Never registered (e.g. an unwound failed add): the
                     // removal cannot be attributed to a torrent.
@@ -191,35 +185,35 @@ impl BatchState<'_> {
                 }
             }
             Alert::TorrentFinished(a) => {
-                if let Some(torrent) = self.torrent_of(a) {
+                if let Some(uuid) = self.torrent_of(a) {
                     self.request_save(
-                        torrent.uuid,
+                        uuid,
                         TorrentHandle::RESUME_SAVE_INFO_DICT
                             | TorrentHandle::RESUME_FLUSH_DISK_CACHE,
                     );
-                    self.publish(Some(torrent), EventKind::TorrentFinished);
+                    self.publish(Some(uuid), EventKind::TorrentFinished);
                 }
             }
             Alert::SaveResumeData(a) => {
-                let Some(torrent) = self.torrent_of(a) else {
+                let Some(uuid) = self.torrent_of(a) else {
                     self.inflight.dec();
                     return;
                 };
-                if self.registry.find(&torrent.uuid).is_none() {
+                if self.registry.find(&uuid).is_none() {
                     // Removed while the save was in flight.
                     self.inflight.dec();
                     return;
                 }
                 match a.write_resume_data() {
                     Ok(bytes) => self.ops.push(PersistOp::WriteResume {
-                        torrent,
+                        uuid,
                         bytes,
                         ack: None,
                     }),
                     Err(e) => {
                         self.inflight.dec();
                         self.publish(
-                            Some(torrent),
+                            Some(uuid),
                             EventKind::ResumeDataFailed {
                                 message: format!("cannot serialize resume data: {e}"),
                             },
@@ -284,12 +278,12 @@ impl BatchState<'_> {
             }
             Alert::StorageMoved(a) => {
                 let torrent = self.torrent_of(a);
-                if let Some(t) = &torrent {
+                if let Some(uuid) = torrent {
                     // Unconditional (no ONLY_IF_MODIFIED): the metadata-less
                     // move branch never sets libtorrent's need-save flag, so
                     // neither the sweep nor the shutdown flush would ever
                     // persist the new path.
-                    self.request_save(t.uuid, TorrentHandle::RESUME_SAVE_INFO_DICT);
+                    self.request_save(uuid, TorrentHandle::RESUME_SAVE_INFO_DICT);
                 }
                 self.publish(
                     torrent,
@@ -396,17 +390,14 @@ impl BatchState<'_> {
                     // Persist the freshly arrived metadata with the
                     // resume data so a restart re-adds a full torrent.
                     self.request_save(entry.uuid, TorrentHandle::RESUME_SAVE_INFO_DICT);
-                    self.publish(
-                        Some(TorrentRef { uuid: entry.uuid }),
-                        EventKind::MetadataReceived,
-                    );
+                    self.publish(Some(entry.uuid), EventKind::MetadataReceived);
                 }
             }
             _ => {}
         }
     }
 
-    fn publish(&self, torrent: Option<TorrentRef>, kind: EventKind) {
+    fn publish(&self, torrent: Option<Uuid>, kind: EventKind) {
         let _ = self.events.send(Arc::new(Event { torrent, kind }));
     }
 
@@ -431,27 +422,26 @@ impl BatchState<'_> {
     }
 
     /// The torrent an alert belongs to, via its (still valid) handle.
-    fn torrent_of(&self, raw: &RawAlert<'_>) -> Option<TorrentRef> {
+    fn torrent_of(&self, raw: &RawAlert<'_>) -> Option<Uuid> {
         let handle = raw.torrent_handle()?;
         if handle.id() == 0 {
             return None;
         }
-        let uuid = match self.registry.get(handle.id()) {
-            Some(entry) => entry.uuid,
+        match self.registry.get(handle.id()) {
+            Some(entry) => Some(entry.uuid),
             // Not registered (yet): fall back to the attached client data.
-            None => handle.client_data_as::<RsbtData>().ok()?.uuid,
-        };
-        Some(TorrentRef { uuid })
+            None => handle.client_data_as::<RsbtData>().ok().map(|d| d.uuid),
+        }
     }
 
     /// Consumes the pending-delete entry matching `hashes` (recorded by
     /// `Engine::remove_torrent`): deletion alerts carry libtorrent's hash
     /// set, which may be wider than the one captured at removal — overlap,
     /// not equality, identifies the torrent.
-    fn take_pending_delete(&self, hashes: &InfoHash) -> Option<TorrentRef> {
+    fn take_pending_delete(&self, hashes: &InfoHash) -> Option<Uuid> {
         let mut pending = self.pending_deletes.lock().unwrap();
         let i = pending.iter().position(|(h, _)| h.overlaps(hashes))?;
         let (_, uuid) = pending.swap_remove(i);
-        Some(TorrentRef { uuid })
+        Some(uuid)
     }
 }

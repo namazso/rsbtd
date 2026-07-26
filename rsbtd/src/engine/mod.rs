@@ -36,7 +36,7 @@ use uuid::Uuid;
 
 use crate::config::Config;
 use client_data::RsbtData;
-use events::{Event, EventKind, TorrentRef, TrackerInfo};
+use events::{Event, EventKind, TrackerInfo};
 use persist::{PersistOp, StatePaths};
 use registry::{Registry, TorrentEntry};
 
@@ -644,7 +644,7 @@ impl Engine {
         self.inflight.inc();
         if self
             .enqueue_persist_durable(PersistOp::WriteResume {
-                torrent: TorrentRef { uuid: entry.uuid },
+                uuid: entry.uuid,
                 bytes,
                 ack: Some(ack_tx),
             })

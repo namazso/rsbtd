@@ -13,17 +13,13 @@
 use rbtorrent::{TorrentStatus, peers::PeerInfo};
 use uuid::Uuid;
 
-/// Identifies the torrent an event belongs to.
-#[derive(Clone, Copy, Debug)]
-pub struct TorrentRef {
-    /// The torrent's durable identity.
-    pub uuid: Uuid,
-}
-
 /// A structured engine event (owned; shared as `Arc<Event>`).
 #[derive(Debug)]
 pub struct Event {
-    pub torrent: Option<TorrentRef>,
+    /// The durable identity of the torrent this event belongs to; `None`
+    /// for session-scoped events and for alerts that cannot be attributed
+    /// to a torrent.
+    pub torrent: Option<Uuid>,
     pub kind: EventKind,
 }
 
