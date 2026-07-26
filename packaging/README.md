@@ -36,6 +36,7 @@ suites, which CI runs natively anyway.
 | `build-rpm.sh` | Tars the git tree (incl. submodules) and the web UI dist, runs `rpmbuild` in the builder container, collects RPMs into `dist/rpms/`. |
 | `Containerfile` + `build-image.sh` + `container-entrypoint.sh` | Production image from `oraclelinux:10-slim`; its only build input is the RPMs. Ships no config: the entrypoint generates one from `RSBTD_TOKEN` (required) and `RSBTD_LISTEN` unless one is mounted at `/etc/rsbtd/rsbtd.toml`. Serves the web UI on GET /. |
 | `Containerfile.alpine` + `build-alpine.sh` | CI-only canary image on `alpine:edge`: system libtorrent-rasterbar ≥ 2.1 (no vendored sources), Alpine's current rust/cargo (no toolchain pin), default gcc, no LTO — the deliberate opposite corner from the OL10 build. The builder stage runs the full test suite; not published anywhere. |
+| `../flake.nix` + `libtorrent-rasterbar-2.1.nix`, `rsbtd.nix`, `webui.nix` | Nix flake ([below](#nix-flake)): rsbtd/rsbtctl against a locally packaged shared libtorrent-rasterbar 2.1.0, plus the web UI. Same toolchain pins and shim↔Rust LTO as the RPM; only libtorrent stays out of the LTO graph. |
 
 ## The LTO scheme
 
@@ -61,6 +62,23 @@ Nothing in the workspace (`Cargo.toml`, build.rs, CI test builds) knows
 about any of this; a plain `cargo build --features vendored` keeps
 building exactly as before.
 
+## Nix flake
+
+`flake.nix` (repo root) builds `rsbtd`, `rsbtd-webui` and
+`libtorrent-rasterbar` for `x86_64-linux` and `aarch64-linux`, plus a dev
+shell; [INSTALL.md](../INSTALL.md#nix) has the commands.
+
+nixpkgs does not ship libtorrent-rasterbar ≥ 2.1 yet, so
+`libtorrent-rasterbar-2.1.nix` carries a local nixpkgs-style package of
+the 2.1.0 release and `rsbtd.nix` links it dynamically through the strict
+`CTORRENT_LIBTORRENT_PREFIX` override — **not** the vendored/static build
+the RPMs use, anticipating that the package moves into nixpkgs. Toolchain
+pins match the RPM builder and the [LTO scheme](#the-lto-scheme) applies
+to what is built here; only the shared libtorrent stays outside the LTO
+graph. Tests run in the check phase without LTO, like the spec's
+`%check`, over the **git-tracked** tree — new files must be at least
+staged, but the `vendor/` submodules are not needed.
+
 ## Version pins
 
 | what | where |
@@ -69,6 +87,7 @@ building exactly as before.
 | clang/lld/llvm 21.1.8 | `Containerfile.builder` ARG `LLVM_VERSION` (OL10 distro packages) |
 | libtorrent | `vendor/libtorrent` submodule pin |
 | crates | `Cargo.lock` (build uses `--locked`) |
+| nixpkgs + rust-overlay (flake only) | `flake.lock`; the flake's libtorrent is the 2.1.0 release tarball pinned by hash in `libtorrent-rasterbar-2.1.nix` |
 
 ## Notes
 
