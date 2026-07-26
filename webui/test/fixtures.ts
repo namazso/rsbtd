@@ -7,11 +7,10 @@
 import type { TorrentRow } from '@/store/torrents';
 
 /** Complete TorrentListFields-shaped row for tests. */
-export function makeTorrentRow(overrides: Partial<TorrentRow> & { infoHash: string }): TorrentRow {
+export function makeTorrentRow(overrides: Partial<TorrentRow> & { uuid: string }): TorrentRow {
   const base: TorrentRow = {
-    id: 1,
-    infoHash: overrides.infoHash,
-    infoHashV1: overrides.infoHash,
+    uuid: overrides.uuid,
+    infoHashV1: null,
     infoHashV2: null,
     name: 'Test Torrent',
     state: 'DOWNLOADING' as TorrentRow['state'],

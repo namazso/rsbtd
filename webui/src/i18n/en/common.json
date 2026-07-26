@@ -76,7 +76,7 @@
   },
   "notFound": {
     "title": "Not found",
-    "torrent": "Torrent {{hash}} is not in the session"
+    "torrent": "Torrent {{uuid}} is not in the session"
   },
   "pages": {
     "settings": "Settings",

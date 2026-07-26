@@ -72,11 +72,11 @@ export function MobileTorrentList({
           if (row === undefined) return null;
           return (
             <MemoMobileRow
-              key={row.infoHash}
+              key={row.uuid}
               row={row}
               top={vi.start}
               selectionMode={selectionMode}
-              isSelected={selected.has(row.infoHash)}
+              isSelected={selected.has(row.uuid)}
               callbacks={callbacks}
             />
           );

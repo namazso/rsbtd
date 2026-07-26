@@ -10,13 +10,11 @@ const STATES = ['DOWNLOADING', 'SEEDING', 'FINISHED', 'CHECKING_FILES'] as const
 
 /** Deterministic synthetic row for the dev perf fixture. */
 export function makeTorrentRowLike(i: number): TorrentRow {
-  const hash = i.toString(16).padStart(40, '0');
   const size = 1024 * 1024 * (64 + (i % 4096));
   const done = Math.floor(size * ((i % 100) / 100));
   return {
-    id: i,
-    infoHash: hash,
-    infoHashV1: hash,
+    uuid: `00000000-0000-4000-8000-${i.toString(16).padStart(12, '0')}`,
+    infoHashV1: i.toString(16).padStart(40, '0'),
     infoHashV2: null,
     name: `synthetic-${i.toString(36)}-linux-distro-${i}.iso`,
     state: STATES[i % STATES.length]!,

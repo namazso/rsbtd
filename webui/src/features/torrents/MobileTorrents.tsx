@@ -54,14 +54,14 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
   const [actionsOpen, setActionsOpen] = useState(false);
 
   const selectedRows = useMemo(() => {
-    const map = useTorrents.getState().byHash;
-    return [...selected].flatMap((h) => {
-      const row = map.get(h);
+    const map = useTorrents.getState().byUuid;
+    return [...selected].flatMap((u) => {
+      const row = map.get(u);
       return row !== undefined ? [row] : [];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- listVersion tracks store content
   }, [selected, listVersion]);
-  const hashes = selectedRows.map((r) => r.infoHash);
+  const uuids = selectedRows.map((r) => r.uuid);
 
   const exitSelection = () => {
     setSelectionMode(false);
@@ -93,8 +93,8 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
               variant="ghost"
               size="icon"
               aria-label={t('toolbar.resume')}
-              disabled={hashes.length === 0}
-              onClick={() => void torrentCommands.resume(hashes)}
+              disabled={uuids.length === 0}
+              onClick={() => void torrentCommands.resume(uuids)}
             >
               <Play />
             </Button>
@@ -102,8 +102,8 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
               variant="ghost"
               size="icon"
               aria-label={t('toolbar.pause')}
-              disabled={hashes.length === 0}
-              onClick={() => void torrentCommands.pause(hashes)}
+              disabled={uuids.length === 0}
+              onClick={() => void torrentCommands.pause(uuids)}
             >
               <Pause />
             </Button>
@@ -111,9 +111,9 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
               variant="ghost"
               size="icon"
               aria-label={t('toolbar.remove')}
-              disabled={hashes.length === 0}
+              disabled={uuids.length === 0}
               onClick={() => {
-                openRemoveDialog(hashes);
+                openRemoveDialog(uuids);
                 exitSelection();
               }}
             >
@@ -123,7 +123,7 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
               variant="ghost"
               size="icon"
               aria-label={t('mobile.properties')}
-              disabled={hashes.length === 0}
+              disabled={uuids.length === 0}
               onClick={() => setActionsOpen(true)}
             >
               <MoreVertical />
@@ -175,12 +175,12 @@ export function MobileTorrents({ view }: { view: TorrentsView }) {
         selected={selected}
         callbacks={{
           onTap: (row) => {
-            if (selectionMode) useSelection.getState().toggle(row.infoHash);
-            else void navigate(`/torrent/${row.infoHash}`);
+            if (selectionMode) useSelection.getState().toggle(row.uuid);
+            else void navigate(`/torrent/${row.uuid}`);
           },
           onLongPress: (row) => {
             if (!selectionMode) setSelectionMode(true);
-            useSelection.getState().toggle(row.infoHash);
+            useSelection.getState().toggle(row.uuid);
           },
         }}
         emptyText={view.total === 0 ? t('empty.noTorrents') : t('empty.noMatch')}

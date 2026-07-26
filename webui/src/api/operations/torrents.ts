@@ -17,8 +17,7 @@ import { graphql } from '@/gen/gql';
  */
 export const TorrentListFields = graphql(`
   fragment TorrentListFields on Torrent {
-    id
-    infoHash
+    uuid
     infoHashV1
     infoHashV2
     name
@@ -98,9 +97,9 @@ export const TorrentsQuery = graphql(`
   }
 `);
 
-export const TorrentByHashQuery = graphql(`
-  query TorrentByHash($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+export const TorrentByUuidQuery = graphql(`
+  query TorrentByUuid($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       ...TorrentListFields
     }
   }
@@ -124,66 +123,66 @@ export const TorrentEventsSubscription = graphql(`
     torrentEvents {
       __typename
       ... on TorrentAddedEvent {
-        infoHash
+        torrentUuid
       }
       ... on TorrentRemovedEvent {
-        infoHash
+        torrentUuid
       }
       ... on TorrentFinishedEvent {
-        infoHash
+        torrentUuid
       }
       ... on MetadataReceivedEvent {
-        infoHash
+        torrentUuid
       }
       ... on MetadataFailedEvent {
-        infoHash
+        torrentUuid
         error
       }
       ... on TorrentErrorEvent {
-        infoHash
+        torrentUuid
         error
         filename
       }
       ... on TorrentDeletedEvent {
-        infoHash
+        torrentUuid
       }
       ... on TorrentDeleteFailedEvent {
-        infoHash
+        torrentUuid
         error
       }
       ... on ResumeDataSavedEvent {
-        infoHash
+        torrentUuid
       }
       ... on ResumeDataFailedEvent {
-        infoHash
+        torrentUuid
         error
       }
       ... on FileRenamedEvent {
-        infoHash
+        torrentUuid
         fileIndex
         newName
       }
       ... on FileRenameFailedEvent {
-        infoHash
+        torrentUuid
         fileIndex
         error
       }
       ... on StorageMovedEvent {
-        infoHash
+        torrentUuid
         path
       }
       ... on StorageMovedFailedEvent {
-        infoHash
+        torrentUuid
         error
       }
       ... on ScrapeReplyEvent {
-        infoHash
+        torrentUuid
         trackerUrl
         complete
         incomplete
       }
       ... on ScrapeFailedEvent {
-        infoHash
+        torrentUuid
         trackerUrl
         error
       }

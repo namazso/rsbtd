@@ -88,21 +88,21 @@ export function totalPieceCount(row: TorrentRow): number {
 
 export function GeneralTab({
   row,
-  hash,
+  uuid,
   visible,
 }: {
   row: TorrentRow;
-  hash: string;
+  uuid: string;
   visible: boolean;
 }) {
   const { t } = useTranslation('details');
-  const pieces = usePieces(hash, visible);
+  const pieces = usePieces(uuid, visible);
   const pieceInfo = pieces.data?.data?.torrent?.pieces;
   const total = pieceInfo?.total ?? totalPieceCount(row);
 
   const copyMagnet = () =>
     copyTextFrom(async () => {
-      const uri = await mutations.magnetUri(row.infoHash);
+      const uri = await mutations.magnetUri(row.uuid);
       if (uri === null) throw new Error('magnet unavailable');
       return uri;
     });
@@ -119,7 +119,7 @@ export function GeneralTab({
             size="sm"
             variant="outline"
             onClick={() => {
-              void mutations.clearError(row.infoHash).then(() => refreshTorrent(row.infoHash));
+              void mutations.clearError(row.uuid).then(() => refreshTorrent(row.uuid));
             }}
           >
             {t('general.clearError')}

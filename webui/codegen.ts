@@ -23,7 +23,9 @@ const config: CodegenConfig = {
         documentMode: 'string',
         useTypeImports: true,
         scalars: {
-          InfoHash: 'string',
+          UUID: 'string',
+          Sha1Sum: 'string',
+          Sha256Sum: 'string',
           Base64: 'string',
         },
       },

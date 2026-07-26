@@ -511,16 +511,9 @@ export const TORRENT_FIELDS: readonly TorrentFieldDef[] = [
     column: { width: 220 },
   }),
   field({
-    key: 'infoHash',
-    type: 'string',
-    aliases: ['hash'],
-    get: (r) => r.infoHash,
-    column: { width: 300 },
-  }),
-  field({
     key: 'infoHashV1',
     type: 'string',
-    aliases: ['hashv1'],
+    aliases: ['hash', 'hashv1'],
     get: (r) => r.infoHashV1,
     format: (r) => r.infoHashV1 ?? dash(),
     column: { width: 300 },
@@ -541,7 +534,6 @@ export const TORRENT_FIELDS: readonly TorrentFieldDef[] = [
     sortable: false,
     column: { width: 220 },
   }),
-  field({ key: 'id', type: 'number', get: (r) => r.id, column: { width: 50, align: 'right' } }),
 ];
 
 export const TORRENT_FIELD_MAP: ReadonlyMap<string, TorrentFieldDef> = new Map(

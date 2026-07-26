@@ -65,11 +65,9 @@
     "announcingToDht": "Announcing (DHT)",
     "isI2P": "I2P",
     "error": "Error",
-    "infoHash": "Info Hash",
     "infoHashV1": "Info Hash v1",
     "infoHashV2": "Info Hash v2",
-    "flags": "Flags",
-    "id": "ID"
+    "flags": "Flags"
   },
   "status": {
     "error": "Errored",

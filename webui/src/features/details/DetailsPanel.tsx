@@ -28,8 +28,8 @@ const TAB_IDS: TabId[] = ['general', 'files', 'trackers', 'peers', 'options'];
  */
 export function DetailsPanel() {
   const { t } = useTranslation(['details', 'common']);
-  const detailsHash = useUi((s) => s.detailsHash);
-  const setDetailsHash = useUi((s) => s.setDetailsHash);
+  const detailsUuid = useUi((s) => s.detailsUuid);
+  const setDetailsUuid = useUi((s) => s.setDetailsUuid);
   const height = usePrefs((s) => s.detailsPanelSize);
   const setPrefs = usePrefs((s) => s.set);
   const listVersion = useTorrents((s) => s.listVersion);
@@ -55,8 +55,8 @@ export function DetailsPanel() {
     [setPrefs],
   );
 
-  if (detailsHash === null) return null;
-  const row = useTorrents.getState().byHash.get(detailsHash);
+  if (detailsUuid === null) return null;
+  const row = useTorrents.getState().byUuid.get(detailsUuid);
   if (row === undefined) return null;
 
   return (
@@ -88,7 +88,7 @@ export function DetailsPanel() {
             variant="ghost"
             size="iconSm"
             aria-label={t('common:actions.close')}
-            onClick={() => setDetailsHash(null)}
+            onClick={() => setDetailsUuid(null)}
           >
             <X />
           </Button>
@@ -97,18 +97,18 @@ export function DetailsPanel() {
             web-seed draft, queue-position text, collapsed folders) never
             leaks from one torrent to the next; the chosen tab lives
             outside and survives. */}
-        <div key={row.infoHash} className="min-h-0 flex-1 overflow-y-auto border-t border-border">
+        <div key={row.uuid} className="min-h-0 flex-1 overflow-y-auto border-t border-border">
           <TabsContent value="general" className="h-full">
-            <GeneralTab row={row} hash={row.infoHash} visible={tab === 'general'} />
+            <GeneralTab row={row} uuid={row.uuid} visible={tab === 'general'} />
           </TabsContent>
           <TabsContent value="files" className="h-full">
-            <FilesTab hash={row.infoHash} visible={tab === 'files'} />
+            <FilesTab uuid={row.uuid} visible={tab === 'files'} />
           </TabsContent>
           <TabsContent value="trackers" className="h-full">
-            <TrackersTab hash={row.infoHash} visible={tab === 'trackers'} />
+            <TrackersTab uuid={row.uuid} visible={tab === 'trackers'} />
           </TabsContent>
           <TabsContent value="peers" className="h-full">
-            <PeersTab hash={row.infoHash} visible={tab === 'peers'} />
+            <PeersTab uuid={row.uuid} visible={tab === 'peers'} />
           </TabsContent>
           <TabsContent value="options" className="h-full">
             <OptionsTab row={row} />

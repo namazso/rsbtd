@@ -41,14 +41,14 @@ export function RemoveTorrentDialog() {
   const submit = async () => {
     if (state === null) return;
     setBusy(true);
-    const { errors } = await bulk(state.hashes, (h) => mutations.remove(h, deleteFiles));
+    const { errors } = await bulk(state.uuids, (h) => mutations.remove(h, deleteFiles));
     for (const e of errors) toast.error(e.message);
     if (useUi.getState().removeDialog !== state) return;
     setBusy(false);
     close();
   };
 
-  const count = state?.hashes.length ?? 0;
+  const count = state?.uuids.length ?? 0;
   return (
     <Dialog open={state !== null} onOpenChange={(o) => !o && close()}>
       <DialogContent role="alertdialog" onOpenAutoFocus={(e) => e.preventDefault()}>
@@ -90,7 +90,7 @@ export function MoveStorageDialog() {
 
   useEffect(() => {
     if (state !== null) {
-      const first = useTorrents.getState().byHash.get(state.hashes[0] ?? '');
+      const first = useTorrents.getState().byUuid.get(state.uuids[0] ?? '');
       setPath(first?.savePath ?? '');
       setMode('ALWAYS_REPLACE_FILES');
       setBusy(false);
@@ -102,9 +102,9 @@ export function MoveStorageDialog() {
     setBusy(true);
     // Waits server-side for the storage_moved confirmation (up to 10 min);
     // per-torrent moves are serialized by the daemon.
-    const { errors } = await bulk(state.hashes, async (h) => {
+    const { errors } = await bulk(state.uuids, async (h) => {
       const result = await mutations.moveStorage(h, path.trim(), mode);
-      const name = useTorrents.getState().byHash.get(h)?.name ?? h.slice(0, 8);
+      const name = useTorrents.getState().byUuid.get(h)?.name ?? h.slice(0, 8);
       toast.success(t('moveDialog.moved', { name, path: result.moveStorage }));
     });
     for (const e of errors) toast.error(e.message);
@@ -164,10 +164,10 @@ export function TorrentLimitsDialog() {
 
   useEffect(() => {
     if (state !== null) {
-      const first = useTorrents.getState().byHash.get(state.hashes[0] ?? '');
+      const first = useTorrents.getState().byUuid.get(state.uuids[0] ?? '');
       const countText = (v: number | undefined) => (v === undefined ? '' : String(v));
       initial.current =
-        state.hashes.length === 1 && first
+        state.uuids.length === 1 && first
           ? {
               up: formatRateKiB(first.uploadLimit),
               down: formatRateKiB(first.downloadLimit),
@@ -218,7 +218,7 @@ export function TorrentLimitsDialog() {
         ? undefined
         : parseCount(maxConnections),
     };
-    const { errors } = await bulk(state.hashes, (h) => mutations.setLimits(h, limits));
+    const { errors } = await bulk(state.uuids, (h) => mutations.setLimits(h, limits));
     if (useUi.getState().limitsDialog !== state) return;
     setBusy(false);
     if (errors.length > 0) {

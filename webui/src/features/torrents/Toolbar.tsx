@@ -118,15 +118,15 @@ export function Toolbar() {
   const setPrefs = usePrefs((s) => s.set);
 
   const selectedRows = useMemo(() => {
-    const map = useTorrents.getState().byHash;
-    return [...selected].flatMap((h) => {
-      const row = map.get(h);
+    const map = useTorrents.getState().byUuid;
+    return [...selected].flatMap((u) => {
+      const row = map.get(u);
       return row !== undefined ? [row] : [];
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- listVersion tracks store content
   }, [selected, listVersion]);
-  const hashes = selectedRows.map((r) => r.infoHash);
-  const none = hashes.length === 0;
+  const uuids = selectedRows.map((r) => r.uuid);
+  const none = uuids.length === 0;
 
   return (
     <div className="flex items-center gap-1 border-b border-border px-2 py-1.5">
@@ -154,7 +154,7 @@ export function Toolbar() {
           size="icon"
           aria-label={t('toolbar.resume')}
           disabled={none}
-          onClick={() => void torrentCommands.resume(hashes)}
+          onClick={() => void torrentCommands.resume(uuids)}
         >
           <Play />
         </Button>
@@ -165,7 +165,7 @@ export function Toolbar() {
           size="icon"
           aria-label={t('toolbar.pause')}
           disabled={none}
-          onClick={() => void torrentCommands.pause(hashes)}
+          onClick={() => void torrentCommands.pause(uuids)}
         >
           <Pause />
         </Button>
@@ -176,7 +176,7 @@ export function Toolbar() {
           size="icon"
           aria-label={t('toolbar.remove')}
           disabled={none}
-          onClick={() => openRemoveDialog(hashes)}
+          onClick={() => openRemoveDialog(uuids)}
         >
           <Trash2 />
         </Button>

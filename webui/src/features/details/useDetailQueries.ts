@@ -22,36 +22,36 @@ import type { TypedDocumentString } from '@/gen/gql/graphql';
  */
 function useDetailQuery<TResult>(
   part: string,
-  doc: TypedDocumentString<TResult, { hash: string }>,
-  hash: string,
+  doc: TypedDocumentString<TResult, { uuid: string }>,
+  uuid: string,
   visible: boolean,
   intervalMs: number,
 ) {
   const state = useConnection((s) => s.state);
   const generation = useConnection((s) => s.generation);
   return useQuery({
-    queryKey: ['torrent', hash, part, generation],
-    queryFn: ({ signal }) => requestTolerant(doc, { hash }, { signal }),
+    queryKey: ['torrent', uuid, part, generation],
+    queryFn: ({ signal }) => requestTolerant(doc, { uuid }, { signal }),
     enabled: visible && (state === 'up' || state === 'degraded'),
     refetchInterval: (query) => (query.state.fetchStatus === 'fetching' ? false : intervalMs),
     // Carry data across refetches/reconnects of the SAME torrent only.
     // A blanket keepPreviousData would show torrent A's files/trackers
     // while B loads — with every action closure already bound to B's
-    // hash, sending A's row actions to B.
+    // uuid, sending A's row actions to B.
     placeholderData: (prev, prevQuery) =>
-      prevQuery !== undefined && prevQuery.queryKey[1] === hash ? prev : undefined,
+      prevQuery !== undefined && prevQuery.queryKey[1] === uuid ? prev : undefined,
   });
 }
 
-export function usePieces(hash: string, visible: boolean) {
-  return useDetailQuery('pieces', TorrentPiecesQuery, hash, visible, 5_000);
+export function usePieces(uuid: string, visible: boolean) {
+  return useDetailQuery('pieces', TorrentPiecesQuery, uuid, visible, 5_000);
 }
-export function useFiles(hash: string, visible: boolean) {
-  return useDetailQuery('files', TorrentFilesQuery, hash, visible, 5_000);
+export function useFiles(uuid: string, visible: boolean) {
+  return useDetailQuery('files', TorrentFilesQuery, uuid, visible, 5_000);
 }
-export function useTrackers(hash: string, visible: boolean) {
-  return useDetailQuery('trackers', TorrentTrackersQuery, hash, visible, 5_000);
+export function useTrackers(uuid: string, visible: boolean) {
+  return useDetailQuery('trackers', TorrentTrackersQuery, uuid, visible, 5_000);
 }
-export function usePeers(hash: string, visible: boolean) {
-  return useDetailQuery('peers', TorrentPeersQuery, hash, visible, 4_000);
+export function usePeers(uuid: string, visible: boolean) {
+  return useDetailQuery('peers', TorrentPeersQuery, uuid, visible, 4_000);
 }

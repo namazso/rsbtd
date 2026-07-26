@@ -13,8 +13,8 @@ import { graphql } from '@/gen/gql';
  * the tolerant client (partial data + errors).
  */
 export const TorrentPiecesQuery = graphql(`
-  query TorrentPieces($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+  query TorrentPieces($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       pieces(includeBitfield: true) {
         total
         have
@@ -25,8 +25,8 @@ export const TorrentPiecesQuery = graphql(`
 `);
 
 export const TorrentFilesQuery = graphql(`
-  query TorrentFiles($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+  query TorrentFiles($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       files {
         index
         path
@@ -45,8 +45,8 @@ export const TorrentFilesQuery = graphql(`
 `);
 
 export const TorrentTrackersQuery = graphql(`
-  query TorrentTrackers($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+  query TorrentTrackers($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       trackers {
         url
         trackerId
@@ -61,8 +61,8 @@ export const TorrentTrackersQuery = graphql(`
 `);
 
 export const TorrentPeersQuery = graphql(`
-  query TorrentPeers($hash: InfoHash!) {
-    torrent(infoHash: $hash) {
+  query TorrentPeers($uuid: UUID!) {
+    torrent(uuid: $uuid) {
       peers {
         address
         localEndpoint

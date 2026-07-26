@@ -26,10 +26,10 @@ export function isValidPeerAddress(text: string): boolean {
   return v4.test(text) || v6.test(text);
 }
 
-export function PeersTab({ hash, visible }: { hash: string; visible: boolean }) {
+export function PeersTab({ uuid, visible }: { uuid: string; visible: boolean }) {
   const { t } = useTranslation(['details', 'common']);
   const isMobile = useIsMobile();
-  const query = usePeers(hash, visible);
+  const query = usePeers(uuid, visible);
   const peers = query.data?.data?.torrent?.peers ?? [];
   const [addOpen, setAddOpen] = useState(false);
 
@@ -139,17 +139,17 @@ export function PeersTab({ hash, visible }: { hash: string; visible: boolean }) 
         })}
       </div>
 
-      <AddPeerDialog hash={hash} open={addOpen} onClose={() => setAddOpen(false)} />
+      <AddPeerDialog uuid={uuid} open={addOpen} onClose={() => setAddOpen(false)} />
     </div>
   );
 }
 
 function AddPeerDialog({
-  hash,
+  uuid,
   open,
   onClose,
 }: {
-  hash: string;
+  uuid: string;
   open: boolean;
   onClose: () => void;
 }) {
@@ -159,7 +159,7 @@ function AddPeerDialog({
 
   const submit = async () => {
     try {
-      await mutations.connectPeer(hash, address.trim());
+      await mutations.connectPeer(uuid, address.trim());
       setAddress('');
       onClose();
     } catch (err) {

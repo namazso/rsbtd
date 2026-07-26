@@ -33,38 +33,36 @@ export interface AddDialogInit {
 interface UiState {
   category: CategoryId;
   searchText: string;
-  /** Torrent shown in the details panel/page (canonical hash). */
-  detailsHash: string | null;
+  /** Torrent shown in the details panel/page (uuid). */
+  detailsUuid: string | null;
   /** Mobile long-press multi-select mode. */
   selectionMode: boolean;
   /** Virtual-list scroll offsets, keyed by view, restored on remount. */
   listOffsets: Record<string, number>;
 
   addDialog: AddDialogInit | null;
-  removeDialog: { hashes: string[] } | null;
-  moveDialog: { hashes: string[] } | null;
-  limitsDialog: { hashes: string[] } | null;
+  removeDialog: { uuids: string[] } | null;
+  moveDialog: { uuids: string[] } | null;
+  limitsDialog: { uuids: string[] } | null;
 
   setCategory: (category: CategoryId) => void;
   setSearchText: (text: string) => void;
-  setDetailsHash: (hash: string | null) => void;
+  setDetailsUuid: (uuid: string | null) => void;
   setSelectionMode: (on: boolean) => void;
   setListOffset: (key: string, offset: number) => void;
   openAddDialog: (init?: AddDialogInit) => void;
-  openRemoveDialog: (hashes: string[]) => void;
-  openMoveDialog: (hashes: string[]) => void;
-  openLimitsDialog: (hashes: string[]) => void;
+  openRemoveDialog: (uuids: string[]) => void;
+  openMoveDialog: (uuids: string[]) => void;
+  openLimitsDialog: (uuids: string[]) => void;
   closeDialogs: () => void;
   /** A torrent left the session. */
-  onTorrentGone: (hash: string) => void;
-  /** A torrent got re-keyed (metadata gained preferred hash). */
-  onTorrentRekeyed: (oldHash: string, newHash: string) => void;
+  onTorrentGone: (uuid: string) => void;
 }
 
 export const useUi = create<UiState>((set) => ({
   category: 'all',
   searchText: '',
-  detailsHash: null,
+  detailsUuid: null,
   selectionMode: false,
   listOffsets: {},
   addDialog: null,
@@ -74,17 +72,15 @@ export const useUi = create<UiState>((set) => ({
 
   setCategory: (category) => set({ category }),
   setSearchText: (searchText) => set({ searchText }),
-  setDetailsHash: (detailsHash) => set({ detailsHash }),
+  setDetailsUuid: (detailsUuid) => set({ detailsUuid }),
   setSelectionMode: (selectionMode) => set({ selectionMode }),
   setListOffset: (key, offset) =>
     set((s) => ({ listOffsets: { ...s.listOffsets, [key]: offset } })),
   openAddDialog: (init) => set({ addDialog: init ?? {} }),
-  openRemoveDialog: (hashes) => set({ removeDialog: { hashes } }),
-  openMoveDialog: (hashes) => set({ moveDialog: { hashes } }),
-  openLimitsDialog: (hashes) => set({ limitsDialog: { hashes } }),
+  openRemoveDialog: (uuids) => set({ removeDialog: { uuids } }),
+  openMoveDialog: (uuids) => set({ moveDialog: { uuids } }),
+  openLimitsDialog: (uuids) => set({ limitsDialog: { uuids } }),
   closeDialogs: () =>
     set({ addDialog: null, removeDialog: null, moveDialog: null, limitsDialog: null }),
-  onTorrentGone: (hash) => set((s) => (s.detailsHash === hash ? { detailsHash: null } : {})),
-  onTorrentRekeyed: (oldHash, newHash) =>
-    set((s) => (s.detailsHash === oldHash ? { detailsHash: newHash } : {})),
+  onTorrentGone: (uuid) => set((s) => (s.detailsUuid === uuid ? { detailsUuid: null } : {})),
 }));

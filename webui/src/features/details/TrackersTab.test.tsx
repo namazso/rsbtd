@@ -62,7 +62,7 @@ describe('TrackersTab', () => {
         client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
       >
         <TooltipProvider>
-          <TrackersTab hash="aa11" visible />
+          <TrackersTab uuid="aa11" visible />
         </TooltipProvider>
       </QueryClientProvider>,
     );
@@ -75,7 +75,7 @@ describe('TrackersTab', () => {
     const [doc, vars] = request.mock.calls[0] as [unknown, unknown];
     expect(String(doc)).toContain('replaceTrackers');
     expect(vars).toEqual({
-      hash: 'aa11',
+      uuid: 'aa11',
       trackers: [{ url: 'http://b.example/announce', tier: 1 }],
     });
   });

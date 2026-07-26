@@ -39,32 +39,30 @@ function RootLayout() {
 }
 
 /**
- * `#/torrent/:hash` — on mobile the full-screen Properties page; on
+ * `#/torrent/:uuid` — on mobile the full-screen Properties page; on
  * desktop a deep link that selects the torrent in the bottom panel.
  */
 function TorrentRoute() {
-  const { hash } = useParams();
+  const { uuid } = useParams();
   const isMobile = useIsMobile();
-  if (hash === undefined) return <Navigate to="/" replace />;
-  if (isMobile) return <MobileTorrentPage hash={hash} />;
-  return <DesktopDeepLink hash={hash} />;
+  if (uuid === undefined) return <Navigate to="/" replace />;
+  if (isMobile) return <MobileTorrentPage uuid={uuid} />;
+  return <DesktopDeepLink uuid={uuid} />;
 }
 
-function DesktopDeepLink({ hash }: { hash: string }) {
+function DesktopDeepLink({ uuid }: { uuid: string }) {
   const navigate = useNavigate();
   const synced = useSynced((s) => s.synced);
 
   useEffect(() => {
     if (!synced) return; // wait for the initial resync
-    const store = useTorrents.getState();
-    const canonical = store.resolve(hash);
-    if (canonical !== undefined) {
-      useUi.getState().setDetailsHash(canonical);
+    if (useTorrents.getState().byUuid.has(uuid)) {
+      useUi.getState().setDetailsUuid(uuid);
     } else {
-      toast.error(tDynamic('common:notFound.torrent', { hash: hash.slice(0, 12) }));
+      toast.error(tDynamic('common:notFound.torrent', { uuid: uuid.slice(0, 8) }));
     }
     void navigate('/', { replace: true });
-  }, [hash, synced, navigate]);
+  }, [uuid, synced, navigate]);
 
   return null;
 }
@@ -75,7 +73,7 @@ export const router = createHashRouter([
     Component: RootLayout,
     children: [
       { index: true, Component: TorrentsPage },
-      { path: 'torrent/:hash', Component: TorrentRoute },
+      { path: 'torrent/:uuid', Component: TorrentRoute },
       {
         path: 'settings/:section?',
         lazy: async () => ({
