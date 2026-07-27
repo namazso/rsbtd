@@ -8,12 +8,15 @@
 //!
 //! Routes: `POST /graphql` (bearer-authenticated queries/mutations),
 //! `GET /graphql` (graphql-ws subscriptions, token via `connection_init`),
-//! `GET /healthz` (unauthenticated liveness), and on `GET /` either
-//! GraphiQL or a static web UI directory (`serve_root`), when enabled in
-//! the config. The `cors` config option allows listed origins to call the
-//! API from a web UI served elsewhere.
+//! `POST /json` (a best-effort Deluge-compatible JSON API with cookie
+//! sessions — see [`deluge`]), `GET /healthz` (unauthenticated
+//! liveness), and on `GET /` either GraphiQL or a static web UI
+//! directory (`serve_root`), when enabled in the config. The `cors`
+//! config option allows listed origins to call the API from a web UI
+//! served elsewhere.
 
 pub mod auth;
+pub mod deluge;
 pub mod events;
 pub mod listener;
 pub mod mutation;
@@ -52,7 +55,7 @@ use query::QueryRoot;
 use subscription::SubscriptionRoot;
 
 /// Request body cap: base64 .torrent uploads can be tens of MiB.
-const BODY_LIMIT: usize = 64 * 1024 * 1024;
+pub const BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 /// How long an upgraded WebSocket may take to send `connection_init`
 /// (which carries the token) before it is closed.
@@ -114,12 +117,15 @@ struct WsState {
 /// `serve_root`, `cors`). Upgraded WebSockets are detached from the HTTP
 /// server: they watch `shutdown` and are tracked by `ws_tasks` so the
 /// daemon can close and await them. `req_kill` cancels in-flight
-/// `/graphql` requests (503) — hyper connection tasks are detached from
-/// the serve coordinator, so this is the only way to end a long-running
-/// handler that would otherwise hold engine references past shutdown.
+/// `/graphql` and `/json` requests (503) — hyper connection tasks are
+/// detached from the serve coordinator, so this is the only way to end
+/// a long-running handler that would otherwise hold engine references
+/// past shutdown.
+#[allow(clippy::too_many_arguments)] // one caller: Daemon::start wiring
 pub fn router(
     schema: ApiSchema,
     auth: Arc<Auth>,
+    engine: Arc<Engine>,
     config: &Config,
     shutdown: watch::Receiver<bool>,
     ws_tasks: TaskTracker,
@@ -137,7 +143,8 @@ pub fn router(
     // route_layer wraps only the routes added before it (and unlike
     // `layer`, not the 404 fallback): /graphql is authenticated, /healthz
     // and GET / are not (GraphiQL and the web UI are static files; their
-    // queries still need the token). WebSocket upgrades pass the header
+    // queries still need the token), and /json authenticates per call
+    // with its session cookie. WebSocket upgrades pass the header
     // middleware and authenticate in `connection_init` instead (browsers
     // cannot set headers on WebSockets).
     let mut router = Router::new()
@@ -148,31 +155,21 @@ pub fn router(
                 .with_state(ws),
         )
         .route_layer(axum::middleware::from_fn_with_state(
-            auth,
+            Arc::clone(&auth),
             auth::require_bearer,
         ))
         // A real middleware-level cap: async-graphql's extractor consumes
         // the raw request body, which axum's DefaultBodyLimit (an
         // extractor-layer mechanism) does not restrict.
         .route_layer(RequestBodyLimitLayer::new(BODY_LIMIT))
-        // Outermost on /graphql: dropping the inner future on cancel is
-        // what releases the handler's engine/session references.
-        .route_layer(axum::middleware::from_fn(
-            move |req: axum::extract::Request, next: axum::middleware::Next| {
-                let kill = req_kill.clone();
-                async move {
-                    tokio::select! {
-                        biased;
-                        () = kill.cancelled() => {
-                            (StatusCode::SERVICE_UNAVAILABLE, "the daemon is shutting down")
-                                .into_response()
-                        }
-                        resp = next.run(req) => resp,
-                    }
-                }
-            },
+        // Outermost on /graphql.
+        .route_layer(axum::middleware::from_fn_with_state(
+            req_kill.clone(),
+            shutdown_503,
         ))
-        .route("/healthz", get(healthz));
+        .route("/healthz", get(healthz))
+        // Caps its own body and brings its shutdown layer along.
+        .merge(deluge::router(engine, auth, req_kill));
     if let Some(layer) = cors_layer(&config.cors) {
         // Outermost on the routes above, so preflight OPTIONS requests are
         // answered before (unauthenticated) they would hit the bearer check.
@@ -189,12 +186,16 @@ pub fn router(
 }
 
 /// CORS for the listed `Origin` values (or any, on `"*"`); `None` when the
-/// list is empty — same-origin use needs no CORS headers.
+/// list is empty — same-origin use needs no CORS headers. Listed origins
+/// may also send credentials, which the `/json` session cookie rides on;
+/// the CORS spec forbids that with a wildcard origin, so `"*"` leaves
+/// cookie-authenticated calls to bearer-style clients.
 fn cors_layer(origins: &[String]) -> Option<CorsLayer> {
     if origins.is_empty() {
         return None;
     }
-    let allow_origin = if origins.iter().any(|o| o == "*") {
+    let any_origin = origins.iter().any(|o| o == "*");
+    let allow_origin = if any_origin {
         AllowOrigin::any()
     } else {
         AllowOrigin::list(origins.iter().map(|o| {
@@ -202,13 +203,15 @@ fn cors_layer(origins: &[String]) -> Option<CorsLayer> {
                 .expect("origins are validated at config parse time")
         }))
     };
-    Some(
-        CorsLayer::new()
-            .allow_origin(allow_origin)
-            .allow_methods([Method::GET, Method::POST])
-            .allow_headers([AUTHORIZATION, CONTENT_TYPE])
-            .max_age(std::time::Duration::from_secs(3600)),
-    )
+    let mut layer = CorsLayer::new()
+        .allow_origin(allow_origin)
+        .allow_methods([Method::GET, Method::POST])
+        .allow_headers([AUTHORIZATION, CONTENT_TYPE])
+        .max_age(std::time::Duration::from_secs(3600));
+    if !any_origin {
+        layer = layer.allow_credentials(true);
+    }
+    Some(layer)
 }
 
 /// graphql-ws upgrade handler. A connection is accepted when the upgrade
@@ -345,6 +348,22 @@ async fn graphql_ws(
                 }
             })
         })
+}
+
+/// Fails requests with 503 once `kill` is cancelled: dropping the inner
+/// future is what releases the handler's engine/session references.
+async fn shutdown_503(
+    State(kill): State<CancellationToken>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    tokio::select! {
+        biased;
+        () = kill.cancelled() => {
+            (StatusCode::SERVICE_UNAVAILABLE, "the daemon is shutting down").into_response()
+        }
+        resp = next.run(req) => resp,
+    }
 }
 
 async fn healthz() -> &'static str {

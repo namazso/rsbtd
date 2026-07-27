@@ -23,7 +23,7 @@ use crate::engine::{Engine, EngineError};
 pub struct QueryRoot;
 
 /// The linked libtorrent's stats-metrics table (static per build).
-fn metrics_table() -> &'static [StatsMetric] {
+pub(crate) fn metrics_table() -> &'static [StatsMetric] {
     static TABLE: OnceLock<Vec<StatsMetric>> = OnceLock::new();
     TABLE.get_or_init(|| {
         rbtorrent::session_stats_metrics().expect("cannot enumerate libtorrent's stats metrics")

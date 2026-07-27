@@ -979,12 +979,49 @@ impl Engine {
         path: &str,
         mode: u32,
     ) -> Result<String, EngineError> {
+        // StorageMoved alerts carry no request key: a concurrent move
+        // would consume this one's response.
+        let guard = self
+            .op_lock(entry.uuid, OpClass::MoveStorage)
+            .lock_owned()
+            .await;
+        self.move_storage_queued(guard, entry, path, mode).await
+    }
+
+    /// [`Engine::move_storage`] in the background, this torrent's turn
+    /// taken before the call returns: a caller that answers its client
+    /// right away still moves in call order, which taking the turn
+    /// inside the spawned task would leave to the scheduler.
+    pub async fn move_storage_detached(
+        self: &Arc<Self>,
+        entry: Arc<TorrentEntry>,
+        path: String,
+        mode: u32,
+    ) {
+        let guard = self
+            .op_lock(entry.uuid, OpClass::MoveStorage)
+            .lock_owned()
+            .await;
+        let engine = Arc::clone(self);
+        tokio::spawn(async move {
+            if let Err(e) = engine.move_storage_queued(guard, &entry, &path, mode).await {
+                tracing::warn!("cannot move torrent {} to {path}: {e}", entry.uuid);
+            }
+        });
+    }
+
+    /// The move itself, with this torrent's move turn already held. The
+    /// handle is found after the turn, so a removed-while-queued torrent
+    /// gets NotFound rather than a timeout.
+    async fn move_storage_queued(
+        &self,
+        guard: tokio::sync::OwnedMutexGuard<()>,
+        entry: &TorrentEntry,
+        path: &str,
+        mode: u32,
+    ) -> Result<String, EngineError> {
         let uuid = entry.uuid;
         let path = path.to_owned();
-        // StorageMoved alerts carry no request key: a concurrent move
-        // would consume this one's response. Find the handle after the
-        // lock so a removed-while-queued torrent gets NotFound, not a timeout.
-        let guard = self.op_lock(uuid, OpClass::MoveStorage).lock_owned().await;
         let session = self.session()?;
         let handle = session
             .find_torrent_by_token(entry.token)
