@@ -834,7 +834,7 @@ async fn mutation_surface_over_tcp() {
         ),
     )
     .await;
-    assert!(body.contains("uploadLimit"));
+    assert!(body.contains("rate limit must be"), "{body}");
     assert_eq!(
         daemon
             .engine()
@@ -852,7 +852,7 @@ async fn mutation_surface_over_tcp() {
         ),
     )
     .await;
-    assert!(body.contains("maxConnections"));
+    assert!(body.contains("limit must be"), "{body}");
 
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let (_, body) = raw_request(

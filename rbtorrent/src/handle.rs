@@ -25,6 +25,38 @@ use crate::session::{RemoveFlags, Session};
 use crate::types::{InfoHash, socket_addr_to_ct};
 use crate::util::{str_view, take_ct_str, view_to_cow};
 
+/// libtorrent's internal "unlimited" sentinel for per-torrent
+/// upload/connection counts.
+const UNLIMITED_PEERS: i32 = (1 << 24) - 1;
+
+/// Validates a per-torrent rate limit: -1 (unlimited) or a positive rate
+/// in bytes/sec. libtorrent quietly treats 0 and `i32::MAX` as unlimited
+/// too; rejecting them keeps a stored limit reading back as what was
+/// set.
+pub fn check_rate_limit(limit: i32) -> Result<(), crate::Error> {
+    if limit != -1 && !(1..i32::MAX).contains(&limit) {
+        return Err(crate::Error::binding(&format!(
+            "rate limit must be -1 (unlimited) or a positive rate in bytes/s, got {limit}"
+        )));
+    }
+    Ok(())
+}
+
+/// Validates a max-uploads/max-connections limit: -1 (unlimited) or
+/// `2..=16_777_214`. libtorrent asserts `limit >= 2 || limit == -1` (0
+/// and 1 silently become unlimited in release builds) and stores the
+/// limit in a 24-bit field whose all-ones value is the unlimited
+/// sentinel — anything larger silently truncates (16_777_216 becomes 0,
+/// blocking every peer).
+pub fn check_peer_limit(limit: i32) -> Result<(), crate::Error> {
+    if limit != -1 && !(2..UNLIMITED_PEERS).contains(&limit) {
+        return Err(crate::Error::binding(&format!(
+            "limit must be -1 (unlimited) or between 2 and 16777214, got {limit}"
+        )));
+    }
+    Ok(())
+}
+
 /// A handle to a torrent in a session.
 ///
 /// Clone shares the same underlying torrent. Invalid handles are safe to
@@ -500,22 +532,20 @@ impl TorrentHandle<'_> {
         Ok(())
     }
 
-    /// Sets the upload rate limit in bytes/sec (0 or -1 = unlimited); errors below -1.
+    /// Sets the upload rate limit in bytes/sec; see [`check_rate_limit`]
+    /// for the accepted range (-1 = unlimited).
     pub fn set_upload_limit(&self, limit: i32) -> Result<(), crate::Error> {
-        if limit < -1 {
-            return Err(crate::Error::binding("rate limit must be -1 or higher"));
-        }
+        check_rate_limit(limit)?;
         unsafe {
             sys::ct_torrent_handle_set_upload_limit(self.as_ptr(), limit);
         }
         Ok(())
     }
 
-    /// Sets the download rate limit in bytes/sec (0 or -1 = unlimited); errors below -1.
+    /// Sets the download rate limit in bytes/sec; see
+    /// [`check_rate_limit`] for the accepted range (-1 = unlimited).
     pub fn set_download_limit(&self, limit: i32) -> Result<(), crate::Error> {
-        if limit < -1 {
-            return Err(crate::Error::binding("rate limit must be -1 or higher"));
-        }
+        check_rate_limit(limit)?;
         unsafe {
             sys::ct_torrent_handle_set_download_limit(self.as_ptr(), limit);
         }
@@ -532,29 +562,20 @@ impl TorrentHandle<'_> {
         unsafe { sys::ct_torrent_handle_download_limit(self.as_ptr()) }
     }
 
-    /// libtorrent's internal "unlimited" sentinel for per-torrent upload/connection counts.
-    const UNLIMITED_PEERS: i32 = (1 << 24) - 1;
-
-    /// Sets the max simultaneous uploads; `limit` must be -1 (unlimited)
-    /// or `2..=16_777_214` (libtorrent stores the limit in a 24-bit field
-    /// whose all-ones value is the unlimited sentinel; larger values
-    /// would silently truncate).
+    /// Sets the max simultaneous uploads; see [`check_peer_limit`] for
+    /// the accepted range (-1 = unlimited).
     pub fn set_max_uploads(&self, limit: i32) -> Result<(), crate::Error> {
-        if limit != -1 && !(2..Self::UNLIMITED_PEERS).contains(&limit) {
-            return Err(crate::Error::binding("limit must be -1 or 2..=16777214"));
-        }
+        check_peer_limit(limit)?;
         unsafe {
             sys::ct_torrent_handle_set_max_uploads(self.as_ptr(), limit);
         }
         Ok(())
     }
 
-    /// Sets the max connections; `limit` must be -1 (unlimited) or
-    /// `2..=16_777_214` (see [`TorrentHandle::set_max_uploads`]).
+    /// Sets the max connections; see [`check_peer_limit`] for the
+    /// accepted range (-1 = unlimited).
     pub fn set_max_connections(&self, limit: i32) -> Result<(), crate::Error> {
-        if limit != -1 && !(2..Self::UNLIMITED_PEERS).contains(&limit) {
-            return Err(crate::Error::binding("limit must be -1 or 2..=16777214"));
-        }
+        check_peer_limit(limit)?;
         unsafe {
             sys::ct_torrent_handle_set_max_connections(self.as_ptr(), limit);
         }
@@ -564,21 +585,13 @@ impl TorrentHandle<'_> {
     /// Gets the max uploads setting (-1 = unlimited).
     pub fn max_uploads(&self) -> i32 {
         let raw = unsafe { sys::ct_torrent_handle_max_uploads(self.as_ptr()) };
-        if raw == Self::UNLIMITED_PEERS {
-            -1
-        } else {
-            raw
-        }
+        if raw == UNLIMITED_PEERS { -1 } else { raw }
     }
 
     /// Gets the max connections setting (-1 = unlimited).
     pub fn max_connections(&self) -> i32 {
         let raw = unsafe { sys::ct_torrent_handle_max_connections(self.as_ptr()) };
-        if raw == Self::UNLIMITED_PEERS {
-            -1
-        } else {
-            raw
-        }
+        if raw == UNLIMITED_PEERS { -1 } else { raw }
     }
 
     /// Posts a tracker_list_alert with current trackers.
