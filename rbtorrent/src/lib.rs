@@ -126,7 +126,7 @@ pub use client_data::ClientData;
 pub use create::{CreateFlags, CreateTorrent, FileEntry, FileFlags, list_files, set_piece_hashes};
 pub use error::{Category, Error, Result};
 pub use filter::{IpFilter, PortFilter};
-pub use handle::TorrentHandle;
+pub use handle::{TorrentHandle, check_peer_limit, check_rate_limit};
 pub use info::{File, FileFlags as InfoFileFlags, FileSlice, TorrentInfo};
 pub use params::{
     AddTorrentParams, DownloadPriority, LoadTorrentLimits, StorageMode, TorrentFlags,

@@ -42,33 +42,6 @@ fn validate_priorities(values: &[i32]) -> Result<Vec<DownloadPriority>, EngineEr
         .collect()
 }
 
-/// Validates a rate limit: the schema promises -1 is the only unlimited
-/// sentinel, while libtorrent quietly treats 0 and i32::MAX the same
-/// way. Accept -1 or a positive finite rate, so a stored limit always
-/// reads back as what was set.
-fn check_rate_limit(name: &str, v: i32) -> Result<(), EngineError> {
-    if v != -1 && !(1..i32::MAX).contains(&v) {
-        return Err(EngineError::Invalid(format!(
-            "{name} must be -1 (unlimited) or a positive rate in bytes/s, got {v}"
-        )));
-    }
-    Ok(())
-}
-
-/// Validates a max-uploads/max-connections limit: libtorrent asserts
-/// `limit >= 2 || limit == -1`; 0 and 1 silently become unlimited in
-/// release builds, and the limit lives in a 24-bit field whose all-ones
-/// value is the unlimited sentinel — anything larger silently truncates
-/// (16_777_216 becomes 0, blocking every peer).
-fn check_peer_limit(name: &str, v: i32) -> Result<(), EngineError> {
-    if v != -1 && !(2..=16_777_214).contains(&v) {
-        return Err(EngineError::Invalid(format!(
-            "{name} must be -1 (unlimited) or between 2 and 16777214, got {v}"
-        )));
-    }
-    Ok(())
-}
-
 /// Requires metadata and validates a piece index against the torrent's
 /// piece count: libtorrent silently ignores or asserts out-of-range
 /// piece indexes depending on the call, while the mutation would still
@@ -147,18 +120,19 @@ impl MutationRoot {
         for url in input.url_seeds.iter().flatten() {
             atp.add_url_seed(url);
         }
-        // Validate the whole input before applying any of it.
+        // Validate the whole input before applying any of it: the atp
+        // setters are infallible, so nothing downstream would.
         if let Some(limit) = input.upload_limit {
-            check_rate_limit("uploadLimit", limit)?;
+            rbtorrent::check_rate_limit(limit)?;
         }
         if let Some(limit) = input.download_limit {
-            check_rate_limit("downloadLimit", limit)?;
+            rbtorrent::check_rate_limit(limit)?;
         }
         if let Some(limit) = input.max_uploads {
-            check_peer_limit("maxUploads", limit)?;
+            rbtorrent::check_peer_limit(limit)?;
         }
         if let Some(limit) = input.max_connections {
-            check_peer_limit("maxConnections", limit)?;
+            rbtorrent::check_peer_limit(limit)?;
         }
         if let Some(limit) = input.upload_limit {
             atp.set_upload_limit(limit);
@@ -479,18 +453,19 @@ impl MutationRoot {
     ) -> async_graphql::Result<bool> {
         let engine = ctx.data::<Arc<Engine>>()?;
         let entry = lookup(engine, &uuid)?;
-        // Validate the whole delta before applying any of it.
+        // Validate the whole delta before applying any of it, so a bad
+        // later value cannot leave earlier setters already applied.
         if let Some(limit) = upload_limit {
-            check_rate_limit("uploadLimit", limit)?;
+            rbtorrent::check_rate_limit(limit)?;
         }
         if let Some(limit) = download_limit {
-            check_rate_limit("downloadLimit", limit)?;
+            rbtorrent::check_rate_limit(limit)?;
         }
         if let Some(limit) = max_uploads {
-            check_peer_limit("maxUploads", limit)?;
+            rbtorrent::check_peer_limit(limit)?;
         }
         if let Some(limit) = max_connections {
-            check_peer_limit("maxConnections", limit)?;
+            rbtorrent::check_peer_limit(limit)?;
         }
         engine
             .with_handle(&entry, |h| {

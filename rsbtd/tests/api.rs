@@ -568,6 +568,8 @@ async fn serve_root_and_cors() {
         resp.headers()["access-control-allow-origin"],
         "https://ui.example.com"
     );
+    // Listed origins may send credentials (the /json session cookie).
+    assert_eq!(resp.headers()["access-control-allow-credentials"], "true");
     let allow_headers = resp.headers()["access-control-allow-headers"]
         .to_str()
         .unwrap()
@@ -596,6 +598,11 @@ async fn serve_root_and_cors() {
                 .map(|v| v.to_str().unwrap()),
             expect_allowed.then_some(origin),
         );
+        if expect_allowed {
+            // Allow-Credentials only grants anything paired with a
+            // mirrored origin.
+            assert_eq!(resp.headers()["access-control-allow-credentials"], "true");
+        }
     }
 
     daemon.stop().await;
@@ -834,7 +841,7 @@ async fn mutation_surface_over_tcp() {
         ),
     )
     .await;
-    assert!(body.contains("uploadLimit"));
+    assert!(body.contains("rate limit must be"), "{body}");
     assert_eq!(
         daemon
             .engine()
@@ -852,7 +859,7 @@ async fn mutation_surface_over_tcp() {
         ),
     )
     .await;
-    assert!(body.contains("maxConnections"));
+    assert!(body.contains("limit must be"), "{body}");
 
     let stream = tokio::net::TcpStream::connect(addr).await.unwrap();
     let (_, body) = raw_request(

@@ -106,6 +106,10 @@ graphql-ws on the same route (token in the `connection_init` payload),
 liveness on `GET /healthz`. Set `graphiql = true` to browse the schema in
 GraphiQL.
 
+A best-effort Deluge-compatible JSON API is served on `POST /json` for tools
+that speak the deluge-web protocol: log in with the API token as the Deluge
+password.
+
 ## Is this vibecoded?
 
 Depends on your definition, but AI was heavily used during development:

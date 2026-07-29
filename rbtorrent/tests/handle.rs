@@ -81,8 +81,16 @@ async fn torrent_handle_accessors() {
     assert_eq!(handle.max_connections(), -1);
     assert!(handle.set_max_uploads(1).is_err());
     assert!(handle.set_max_connections(0).is_err());
+    assert!(handle.set_max_uploads(16_777_215).is_err());
+    assert!(handle.set_max_connections(16_777_216).is_err());
     assert!(handle.set_upload_limit(-2).is_err());
     assert!(handle.set_download_limit(-2).is_err());
+    // 0 and i32::MAX are libtorrent's internal unlimited spellings; only
+    // -1 is accepted so limits read back as what was set.
+    assert!(handle.set_upload_limit(0).is_err());
+    assert!(handle.set_download_limit(0).is_err());
+    assert!(handle.set_upload_limit(i32::MAX).is_err());
+    assert!(handle.set_download_limit(i32::MAX).is_err());
 
     let pos = handle.queue_position();
     assert!(pos >= 0 || pos == -1); // Valid or not queued

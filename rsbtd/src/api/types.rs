@@ -24,7 +24,7 @@ fn normalize_rate_limit(raw: i32) -> i32 {
 
 /// Status query flags for list/detail views: all the cheap extras. Piece
 /// bitfields are fetched separately by the `pieces` field.
-const STATUS_FLAGS: u32 = TorrentHandle::QUERY_NAME
+pub(crate) const STATUS_FLAGS: u32 = TorrentHandle::QUERY_NAME
     | TorrentHandle::QUERY_SAVE_PATH
     | TorrentHandle::QUERY_DISTRIBUTED_COPIES
     | TorrentHandle::QUERY_ACCURATE_DOWNLOAD_COUNTERS
@@ -1677,7 +1677,7 @@ impl Torrent {
 }
 
 /// Percent-encodes everything but RFC 3986 unreserved characters.
-fn percent_encode(s: &str) -> String {
+pub(crate) fn percent_encode(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {

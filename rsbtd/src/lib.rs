@@ -113,6 +113,7 @@ impl Daemon {
         let app = api::router(
             schema,
             auth,
+            Arc::clone(&engine),
             &config,
             stop_tx.subscribe(),
             ws_tasks.clone(),
