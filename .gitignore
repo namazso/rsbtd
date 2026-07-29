@@ -12,3 +12,6 @@ dist/
 /webui/node_modules
 /webui/dist
 /webui/src/gen
+# nix build result symlinks
+/result
+/result-*

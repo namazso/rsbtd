@@ -72,6 +72,21 @@ Point the daemon's `serve_root` at the resulting `dist/`, or host it on any
 static file server. Development setup, scripts, and deployment details:
 [webui/README.md](webui/README.md).
 
+## Nix
+
+A flake at the repo root builds the daemon, client, and web UI for
+`x86_64-linux` and `aarch64-linux`:
+
+```sh
+nix build .#rsbtd           # → result/bin/{rsbtd,rsbtctl}
+nix build .#rsbtd-webui     # → result/share/rsbtd/webui
+nix develop                 # dev shell: pinned rustc, clang 21, cmake, node
+```
+
+Unlike the RPMs/MSI this is not a vendored/static build: it links a
+locally packaged libtorrent-rasterbar 2.1.0 shared library. Details:
+[packaging/README.md](packaging/README.md#nix-flake).
+
 ## Linux RPMs
 
 `packaging/build-rpm.sh` builds the RPMs inside an Oracle Linux 10 builder
